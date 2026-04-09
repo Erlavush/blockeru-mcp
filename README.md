@@ -52,7 +52,7 @@ BLOCKERU_BRIDGE_URL=http://127.0.0.1:37891/blockeru-bridge
 In Blockbench Desktop:
 
 1. Open `File > Plugins > Load Plugin from File`
-2. Select `blockbench-plugin/blockeru-mcp-plugin.js`
+2. Select `blockbench-plugin/blockeru_mcp_bridge.js`
 3. Allow local network access if Blockbench prompts for it
 
 The plugin starts a localhost bridge on:
