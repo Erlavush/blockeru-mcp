@@ -48,6 +48,7 @@ export async function generateBlockbenchAssetFromImageGuidance(options: {
     project: built.project,
     texture: built.texture,
     createdCubes: built.createdCubes,
+    qualityReport: built.qualityReport,
     preview: built.preview,
   };
 }

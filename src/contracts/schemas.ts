@@ -241,6 +241,36 @@ export const GeneratedTextureAtlasSchema = z.object({
   materialSlots: z.array(MaterialSlotSchema),
 });
 
+export const QualityFindingSchema = z.object({
+  code: z.string(),
+  severity: z.enum(["info", "warning", "error"]),
+  message: z.string(),
+  suggestedFix: z.string().optional(),
+});
+
+export const QualityMetricsSchema = z.object({
+  boundingBoxMin: Vector3Schema,
+  boundingBoxMax: Vector3Schema,
+  boundingBoxSize: Vector3Schema,
+  boundingBoxCenter: Vector3Schema,
+  targetCenter: Vector3Schema,
+  groundY: z.number(),
+  requestedTextureSize: Vector2Schema,
+  projectTextureSize: Vector2Schema.nullable(),
+  generatedTextureSize: Vector2Schema.nullable(),
+  uvCoverageRatio: z.number().min(0).max(1).nullable(),
+  overlapPixelCount: z.number().int().nonnegative(),
+  tinyFaceCount: z.number().int().nonnegative(),
+  packedFaceCount: z.number().int().nonnegative(),
+});
+
+export const QualityReportSchema = z.object({
+  status: z.enum(["pass", "warn", "fail"]),
+  score: z.number().int().min(0).max(100),
+  findings: z.array(QualityFindingSchema),
+  metrics: QualityMetricsSchema,
+});
+
 export const GenerateAssetFromTextResultSchema = z.object({
   prompt: z.string(),
   projectModeUsed: z.enum(["replace_current_project", "new_project"]),
@@ -249,6 +279,7 @@ export const GenerateAssetFromTextResultSchema = z.object({
   project: ProjectStateSchema,
   texture: TextureResultSchema.nullable(),
   createdCubes: z.array(CubeResultSchema),
+  qualityReport: QualityReportSchema,
   preview: PreviewRenderResultSchema.nullable(),
 });
 
@@ -261,6 +292,7 @@ export const BuildAssetFromSpecResultSchema = z.object({
   project: ProjectStateSchema,
   texture: TextureResultSchema.nullable(),
   createdCubes: z.array(CubeResultSchema),
+  qualityReport: QualityReportSchema,
   preview: PreviewRenderResultSchema.nullable(),
 });
 
@@ -274,6 +306,7 @@ export const GenerateAssetFromImageResultSchema = z.object({
   project: ProjectStateSchema,
   texture: TextureResultSchema.nullable(),
   createdCubes: z.array(CubeResultSchema),
+  qualityReport: QualityReportSchema,
   preview: PreviewRenderResultSchema.nullable(),
 });
 
@@ -302,6 +335,9 @@ export type GenerateAssetFromTextInput = z.infer<typeof GenerateAssetFromTextInp
 export type DraftAssetSpecFromImageInput = z.infer<typeof DraftAssetSpecFromImageInputSchema>;
 export type GenerateAssetFromImageInput = z.infer<typeof GenerateAssetFromImageInputSchema>;
 export type GeneratedTextureAtlas = z.infer<typeof GeneratedTextureAtlasSchema>;
+export type QualityFinding = z.infer<typeof QualityFindingSchema>;
+export type QualityMetrics = z.infer<typeof QualityMetricsSchema>;
+export type QualityReport = z.infer<typeof QualityReportSchema>;
 export type GenerateAssetFromTextResult = z.infer<typeof GenerateAssetFromTextResultSchema>;
 export type BuildAssetFromSpecResult = z.infer<typeof BuildAssetFromSpecResultSchema>;
 export type GenerateAssetFromImageResult = z.infer<typeof GenerateAssetFromImageResultSchema>;

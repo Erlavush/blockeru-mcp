@@ -4,6 +4,7 @@ import type {
   CubeResult,
 } from "../contracts/schemas.js";
 import { planBuildFromAssetSpec } from "./assetPlanning.js";
+import { analyzeBuildQuality } from "./buildQuality.js";
 import { generateMaterialAtlas } from "./proceduralTexture.js";
 import type { BridgeClient } from "./bridgeClient.js";
 
@@ -118,6 +119,13 @@ export async function buildBlockbenchAssetFromSpec(options: {
   const preview = options.input.renderPreview
     ? await options.bridge.renderPreview({ mimeType: "image/png" })
     : null;
+  const qualityReport = analyzeBuildQuality({
+    plan,
+    project,
+    texture,
+    createdCubes,
+    previewRendered: preview !== null,
+  });
 
   return {
     source: "spec",
@@ -128,6 +136,7 @@ export async function buildBlockbenchAssetFromSpec(options: {
     project,
     texture,
     createdCubes,
+    qualityReport,
     preview,
   };
 }

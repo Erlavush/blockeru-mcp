@@ -520,7 +520,7 @@
     }
 
     if (route === `${BASE_PATH}/texture/create` && method === "POST") {
-      sendSocketOk(socket, createTexture(body));
+      sendSocketOk(socket, await createTexture(body));
       return;
     }
 

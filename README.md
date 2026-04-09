@@ -10,6 +10,7 @@ Current status:
 - High-level text-to-model orchestration: implemented
 - High-level spec-to-model orchestration: implemented
 - High-level image-guided planning and generation: implemented
+- Post-build quality scoring and UV/texture diagnostics: implemented
 
 ## Repo Layout
 
@@ -92,8 +93,10 @@ These tools follow the same core flow:
 2. replaces the current Blockbench project contents by default, or creates a fresh project if requested
 3. plans deterministic cube placement
 4. generates a procedural material atlas
-5. builds the cubes in Blockbench
-6. renders a preview back to the MCP client
+5. packs UV islands across the atlas by material slot
+6. builds the cubes in Blockbench
+7. scores the result with a quality report
+8. renders a preview back to the MCP client
 
 Important:
 

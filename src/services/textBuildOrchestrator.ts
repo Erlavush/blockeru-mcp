@@ -38,6 +38,7 @@ export async function generateBlockbenchAssetFromText(options: {
     project: built.project,
     texture: built.texture,
     createdCubes: built.createdCubes,
+    qualityReport: built.qualityReport,
     preview: built.preview,
   };
 }

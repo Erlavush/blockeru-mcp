@@ -284,14 +284,10 @@ function tryPackScaledFaces(options: {
   return layout as CubeFacesLayout;
 }
 
-function buildExpandedFaceUvs(
-  cube: PlannedCube,
-  slot: MaterialSlot,
-  textureWidth: number,
-  textureHeight: number,
-): CubeFacesLayout {
+function getBaseFaceRects(cube: PlannedCube) {
   const { width, height, depth } = getCubeDimensions(cube);
-  const baseRects = [
+
+  return [
     { face: "north" as const, width, height },
     { face: "south" as const, width, height },
     { face: "east" as const, width: depth, height },
@@ -299,6 +295,16 @@ function buildExpandedFaceUvs(
     { face: "up" as const, width, height: depth },
     { face: "down" as const, width, height: depth },
   ].sort((left, right) => right.height * right.width - left.height * left.width);
+}
+
+function buildStandaloneFaceUvs(
+  cube: PlannedCube,
+  slot: MaterialSlot,
+  textureWidth: number,
+  textureHeight: number,
+): CubeFacesLayout {
+  const { width, height, depth } = getCubeDimensions(cube);
+  const baseRects = getBaseFaceRects(cube);
   const tileWidth = Math.max(8, Math.floor(textureWidth / 2));
   const tileHeight = Math.max(8, Math.floor(textureHeight / 2));
   const padding = Math.max(2, Math.floor(Math.min(tileWidth, tileHeight) / 32));
@@ -337,6 +343,124 @@ function buildExpandedFaceUvs(
     up: toFaceRect(slot.uvOffset[0], slot.uvOffset[1], Math.max(2, width), Math.max(2, depth)),
     down: toFaceRect(slot.uvOffset[0], slot.uvOffset[1], Math.max(2, width), Math.max(2, depth)),
   };
+}
+
+function tryPackSlotFaces(options: {
+  cubes: PlannedCube[];
+  slot: MaterialSlot;
+  textureWidth: number;
+  textureHeight: number;
+  scale: number;
+  padding: number;
+}): Map<number, CubeFacesLayout> | null {
+  const tileWidth = Math.max(8, Math.floor(options.textureWidth / 2));
+  const tileHeight = Math.max(8, Math.floor(options.textureHeight / 2));
+  const rects = options.cubes
+    .flatMap((cube, cubeIndex) =>
+      getBaseFaceRects(cube).map((rect) => ({
+        cubeIndex,
+        face: rect.face,
+        width: rect.width,
+        height: rect.height,
+      })),
+    )
+    .sort((left, right) => right.height * right.width - left.height * left.width);
+  let cursorX = options.padding;
+  let cursorY = options.padding;
+  let rowHeight = 0;
+  const layouts = new Map<number, CubeFacesLayout>();
+
+  for (const rect of rects) {
+    const width = Math.max(2, rect.width * options.scale);
+    const height = Math.max(2, rect.height * options.scale);
+
+    if (cursorX + width + options.padding > tileWidth) {
+      cursorX = options.padding;
+      cursorY += rowHeight + options.padding;
+      rowHeight = 0;
+    }
+
+    if (cursorY + height + options.padding > tileHeight) {
+      return null;
+    }
+
+    const existing = layouts.get(rect.cubeIndex) ?? {};
+    existing[rect.face] = toFaceRect(
+      options.slot.uvOffset[0] + cursorX,
+      options.slot.uvOffset[1] + cursorY,
+      width,
+      height,
+    );
+    layouts.set(rect.cubeIndex, existing);
+
+    cursorX += width + options.padding;
+    rowHeight = Math.max(rowHeight, height);
+  }
+
+  return layouts;
+}
+
+function buildPackedFacesForSlot(options: {
+  cubes: PlannedCube[];
+  slot: MaterialSlot;
+  textureWidth: number;
+  textureHeight: number;
+}): Map<number, CubeFacesLayout> {
+  const tileWidth = Math.max(8, Math.floor(options.textureWidth / 2));
+  const tileHeight = Math.max(8, Math.floor(options.textureHeight / 2));
+  const padding = Math.max(2, Math.floor(Math.min(tileWidth, tileHeight) / 32));
+  const allBaseRects = options.cubes.flatMap((cube) => getBaseFaceRects(cube));
+  const totalBaseArea = allBaseRects.reduce(
+    (sum, rect) => sum + Math.max(1, rect.width) * Math.max(1, rect.height),
+    0,
+  );
+  const maxBaseWidth = Math.max(1, ...allBaseRects.map((rect) => rect.width));
+  const maxBaseHeight = Math.max(1, ...allBaseRects.map((rect) => rect.height));
+  const maxScaleByArea = Math.max(
+    1,
+    Math.floor(
+      Math.sqrt(
+        Math.max(1, (tileWidth - padding * 2) * (tileHeight - padding * 2)) /
+          Math.max(1, totalBaseArea),
+      ),
+    ),
+  );
+  const maxScaleByDimension = Math.max(
+    1,
+    Math.floor(
+      Math.min(
+        (tileWidth - padding * 2) / maxBaseWidth,
+        (tileHeight - padding * 2) / maxBaseHeight,
+      ),
+    ),
+  );
+  const maxScale = Math.max(1, Math.min(maxScaleByArea, maxScaleByDimension, 8));
+
+  for (let scale = maxScale; scale >= 1; scale -= 1) {
+    const packed = tryPackSlotFaces({
+      cubes: options.cubes,
+      slot: options.slot,
+      textureWidth: options.textureWidth,
+      textureHeight: options.textureHeight,
+      scale,
+      padding,
+    });
+
+    if (packed) {
+      return packed;
+    }
+  }
+
+  const fallback = new Map<number, CubeFacesLayout>();
+
+  options.cubes.forEach((cube, cubeIndex) => {
+    fallback.set(
+      cubeIndex,
+      buildStandaloneFaceUvs(cube, options.slot, options.textureWidth, options.textureHeight),
+    );
+  });
+
+  return fallback;
 }
 
 function centeredBounds(
@@ -875,18 +999,51 @@ export function planBuildFromAssetSpec(options: {
   const draftCubes = planner(spec, directives, frame);
   const materialSlots = pickMaterialSlots(spec, options.textureWidth, options.textureHeight);
   const slotById = new Map(materialSlots.map((slot) => [slot.slotId, slot]));
-  const cubes = draftCubes.map((cube) => {
+  const cubes: PlannedCube[] = draftCubes.map((cube) => {
     const slot = cube.materialSlot ? slotById.get(cube.materialSlot) : materialSlots[0];
 
     return {
       ...cube,
       uvOffset: slot?.uvOffset,
-      faces:
-        options.boxUv || !slot
-          ? undefined
-          : buildExpandedFaceUvs(cube, slot, options.textureWidth, options.textureHeight),
+      faces: undefined,
     };
   });
+
+  if (!options.boxUv) {
+    const cubesBySlot = new Map<string, Array<{ cubeIndex: number; cube: PlannedCube }>>();
+
+    cubes.forEach((cube, cubeIndex) => {
+      const slotId = cube.materialSlot ?? materialSlots[0]?.slotId;
+      if (!slotId) {
+        return;
+      }
+
+      const bucket = cubesBySlot.get(slotId) ?? [];
+      bucket.push({ cubeIndex, cube });
+      cubesBySlot.set(slotId, bucket);
+    });
+
+    cubesBySlot.forEach((entries, slotId) => {
+      const slot = slotById.get(slotId);
+      if (!slot) {
+        return;
+      }
+
+      const layouts = buildPackedFacesForSlot({
+        cubes: entries.map((entry) => entry.cube),
+        slot,
+        textureWidth: options.textureWidth,
+        textureHeight: options.textureHeight,
+      });
+
+      entries.forEach((entry, localIndex) => {
+        cubes[entry.cubeIndex] = {
+          ...cubes[entry.cubeIndex],
+          faces: layouts.get(localIndex),
+        };
+      });
+    });
+  }
   const projectName = options.projectName ?? sanitizeProjectName(options.prompt, spec.assetType);
 
   return {
