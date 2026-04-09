@@ -318,6 +318,32 @@
     );
   }
 
+  function readPngSizeFromDataUrl(dataUrl) {
+    if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/png;base64,")) {
+      return null;
+    }
+
+    try {
+      const buffer = Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64");
+
+      if (buffer.length < 24) {
+        return null;
+      }
+
+      const signature = buffer.subarray(0, 8).toString("hex");
+      if (signature !== "89504e470d0a1a0a") {
+        return null;
+      }
+
+      return {
+        width: buffer.readUInt32BE(16),
+        height: buffer.readUInt32BE(20),
+      };
+    } catch (_error) {
+      return null;
+    }
+  }
+
   function addCube(payload) {
     const project = currentProject();
     ensure(project, "No Blockbench project is open.");
@@ -432,7 +458,8 @@
     });
 
     texture.fromDataURL(payload.dataUrl).add(false, true);
-    const size = await waitForTextureReady(texture, 1500);
+    const parsedSize = readPngSizeFromDataUrl(payload.dataUrl);
+    const size = parsedSize || (await waitForTextureReady(texture, 1500));
 
     if (size.width > 0 && size.height > 0) {
       applyProjectResolution(size.width, size.height, false);
