@@ -26,14 +26,40 @@ export async function generateBlockbenchAssetFromText(options: {
     ...draftedSpec,
     estimatedSize: plan.estimatedSize,
   };
+  let projectModeUsed: "replace_current_project" | "new_project" = options.input.projectMode;
 
-  await options.bridge.createProject({
-    name: plan.projectName,
-    formatId: plan.formatId,
-    textureWidth: plan.textureWidth,
-    textureHeight: plan.textureHeight,
-    boxUv: plan.boxUv,
-  });
+  if (options.input.projectMode === "replace_current_project") {
+    const currentProject = await options.bridge.getProjectState();
+    const canReuseCurrentProject =
+      currentProject.open &&
+      (currentProject.formatId === null || currentProject.formatId === plan.formatId);
+
+    if (canReuseCurrentProject) {
+      await options.bridge.clearProject({
+        name: plan.projectName,
+        textureWidth: plan.textureWidth,
+        textureHeight: plan.textureHeight,
+        boxUv: plan.boxUv,
+      });
+    } else {
+      projectModeUsed = "new_project";
+      await options.bridge.createProject({
+        name: plan.projectName,
+        formatId: plan.formatId,
+        textureWidth: plan.textureWidth,
+        textureHeight: plan.textureHeight,
+        boxUv: plan.boxUv,
+      });
+    }
+  } else {
+    await options.bridge.createProject({
+      name: plan.projectName,
+      formatId: plan.formatId,
+      textureWidth: plan.textureWidth,
+      textureHeight: plan.textureHeight,
+      boxUv: plan.boxUv,
+    });
+  }
 
   let texture = null;
 
@@ -78,6 +104,7 @@ export async function generateBlockbenchAssetFromText(options: {
 
   return {
     prompt: options.input.prompt,
+    projectModeUsed,
     spec,
     plan,
     project,

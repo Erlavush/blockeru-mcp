@@ -11,6 +11,13 @@ export const ProjectCreateInputSchema = z.object({
   boxUv: z.boolean().default(false),
 });
 
+export const ProjectClearInputSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  textureWidth: z.number().int().positive().optional(),
+  textureHeight: z.number().int().positive().optional(),
+  boxUv: z.boolean().optional(),
+});
+
 export const ProjectStateSchema = z.object({
   open: z.boolean(),
   name: z.string().nullable(),
@@ -142,6 +149,7 @@ export const GenerateAssetFromTextInputSchema = z.object({
   textureWidth: z.number().int().positive().default(256),
   textureHeight: z.number().int().positive().default(256),
   boxUv: z.boolean().default(true),
+  projectMode: z.enum(["replace_current_project", "new_project"]).default("replace_current_project"),
   createTexture: z.boolean().default(true),
   renderPreview: z.boolean().default(true),
 });
@@ -156,6 +164,7 @@ export const GeneratedTextureAtlasSchema = z.object({
 
 export const GenerateAssetFromTextResultSchema = z.object({
   prompt: z.string(),
+  projectModeUsed: z.enum(["replace_current_project", "new_project"]),
   spec: AssetSpecSchema,
   plan: BuildPlanSchema,
   project: ProjectStateSchema,
@@ -165,6 +174,7 @@ export const GenerateAssetFromTextResultSchema = z.object({
 });
 
 export type ProjectCreateInput = z.infer<typeof ProjectCreateInputSchema>;
+export type ProjectClearInput = z.infer<typeof ProjectClearInputSchema>;
 export type ProjectState = z.infer<typeof ProjectStateSchema>;
 export type BridgeHealth = z.infer<typeof BridgeHealthSchema>;
 export type CubeCreateInput = z.infer<typeof CubeCreateInputSchema>;

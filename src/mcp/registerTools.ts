@@ -4,6 +4,7 @@ import {
   CubeCreateInputSchema,
   GenerateAssetFromTextInputSchema,
   PreviewRenderInputSchema,
+  ProjectClearInputSchema,
   ProjectCreateInputSchema,
   PromptAnalysisInputSchema,
   TextureCreateInputSchema,
@@ -105,6 +106,24 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   );
 
   server.registerTool(
+    "clear_blockbench_project",
+    {
+      title: "Clear Blockbench Project",
+      description:
+        "Remove cubes and textures from the currently open Blockbench project while keeping the current tab open.",
+      inputSchema: ProjectClearInputSchema.shape,
+    },
+    async (input) => {
+      try {
+        const project = await deps.bridge.clearProject(input);
+        return okResult(project);
+      } catch (error) {
+        return errorResult("Failed to clear the current Blockbench project.", error);
+      }
+    },
+  );
+
+  server.registerTool(
     "add_blockbench_cube",
     {
       title: "Add Blockbench Cube",
@@ -190,6 +209,7 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
             return okResultWithImage(
               {
                 prompt: result.prompt,
+                projectModeUsed: result.projectModeUsed,
                 spec: result.spec,
                 plan: result.plan,
                 project: result.project,

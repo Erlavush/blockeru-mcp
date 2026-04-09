@@ -119,6 +119,7 @@
       capabilities: [
         "health",
         "project.create",
+        "project.clear",
         "project.state",
         "cube.add",
         "texture.create",
@@ -211,6 +212,98 @@
         Canvas.updateLayeredTextures();
       }
     }
+
+    return getProjectState();
+  }
+
+  function clearCollection(items) {
+    if (!Array.isArray(items)) {
+      return;
+    }
+
+    items
+      .slice()
+      .reverse()
+      .forEach((item) => {
+        if (!item) {
+          return;
+        }
+
+        if (typeof item.remove === "function") {
+          item.remove();
+          return;
+        }
+
+        if (typeof item.delete === "function") {
+          item.delete();
+        }
+      });
+  }
+
+  function refreshCanvas() {
+    if (typeof Canvas === "undefined") {
+      return;
+    }
+
+    if (typeof Canvas.updateAll === "function") {
+      Canvas.updateAll();
+    }
+    if (typeof Canvas.updateAllUVs === "function") {
+      Canvas.updateAllUVs();
+    }
+    if (typeof Canvas.updateLayeredTextures === "function") {
+      Canvas.updateLayeredTextures();
+    }
+  }
+
+  function clearProject(payload) {
+    const project = currentProject();
+    ensure(project, "No Blockbench project is open.");
+
+    if (typeof Outliner !== "undefined" && Array.isArray(Outliner.root)) {
+      clearCollection(Outliner.root);
+    } else {
+      if (typeof Cube !== "undefined") {
+        clearCollection(Cube.all);
+      }
+      if (typeof Mesh !== "undefined") {
+        clearCollection(Mesh.all);
+      }
+      if (typeof Group !== "undefined") {
+        clearCollection(Group.all);
+      }
+    }
+
+    if (typeof Texture !== "undefined") {
+      clearCollection(Texture.all);
+    }
+
+    if (typeof payload.name === "string" && payload.name.trim()) {
+      project.name = payload.name.trim();
+    }
+
+    if (typeof payload.boxUv === "boolean") {
+      project.box_uv = payload.boxUv;
+    }
+
+    const textureWidth = payload.textureWidth === undefined
+      ? Number(project.texture_width || 64)
+      : Number(payload.textureWidth);
+    const textureHeight = payload.textureHeight === undefined
+      ? Number(project.texture_height || 64)
+      : Number(payload.textureHeight);
+
+    if (typeof setProjectResolution === "function") {
+      try {
+        setProjectResolution(textureWidth, textureHeight, true);
+      } catch (_error) {
+        // Fall back to direct assignment below.
+      }
+    }
+
+    project.texture_width = textureWidth;
+    project.texture_height = textureHeight;
+    refreshCanvas();
 
     return getProjectState();
   }
@@ -376,6 +469,11 @@
 
     if (route === `${BASE_PATH}/project/create` && method === "POST") {
       sendSocketOk(socket, createProject(body));
+      return;
+    }
+
+    if (route === `${BASE_PATH}/project/clear` && method === "POST") {
+      sendSocketOk(socket, clearProject(body));
       return;
     }
 

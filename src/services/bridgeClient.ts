@@ -4,6 +4,7 @@ import type {
   CubeResult,
   PreviewRenderInput,
   PreviewRenderResult,
+  ProjectClearInput,
   ProjectCreateInput,
   ProjectState,
   TextureCreateInput,
@@ -48,6 +49,14 @@ export class BridgeClient {
 
   async createProject(input: ProjectCreateInput): Promise<ProjectState> {
     const data = await this.#request("project/create", {
+      method: "POST",
+      body: input,
+    });
+    return ProjectStateSchema.parse(data);
+  }
+
+  async clearProject(input: ProjectClearInput): Promise<ProjectState> {
+    const data = await this.#request("project/clear", {
       method: "POST",
       body: input,
     });

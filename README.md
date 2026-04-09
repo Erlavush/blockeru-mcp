@@ -85,8 +85,13 @@ The MCP server now exposes a high-level orchestration tool:
 This tool:
 
 1. drafts an asset spec from the prompt
-2. creates a fresh Blockbench project
+2. replaces the current Blockbench project contents by default, or creates a fresh project if requested
 3. plans deterministic cube placement
 4. generates a procedural material atlas
 5. builds the cubes in Blockbench
 6. renders a preview back to the MCP client
+
+Important:
+
+- `generate_blockbench_asset_from_text` defaults to `projectMode="replace_current_project"`
+- use `projectMode="new_project"` only when you explicitly want a separate Blockbench tab
