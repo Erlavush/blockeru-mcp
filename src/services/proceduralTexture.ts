@@ -95,7 +95,8 @@ function paintTile(
   png: PNG,
   xOffset: number,
   yOffset: number,
-  tileSize: number,
+  tileWidth: number,
+  tileHeight: number,
   material: string,
   colorHint: string,
   seed: string,
@@ -104,8 +105,8 @@ function paintTile(
   const edge = darken(base, 0.2);
   const highlight = lighten(base, 0.08);
 
-  for (let y = 0; y < tileSize; y += 1) {
-    for (let x = 0; x < tileSize; x += 1) {
+  for (let y = 0; y < tileHeight; y += 1) {
+    for (let x = 0; x < tileWidth; x += 1) {
       let color = base;
       const noise = hash(seed, x, y);
 
@@ -133,7 +134,7 @@ function paintTile(
           break;
         }
         case "glass": {
-          const gradient = y / tileSize;
+          const gradient = y / tileHeight;
           color = mix(lighten(base, 0.15), darken(base, 0.12), gradient * 0.7);
           if ((x + y) % 19 === 0) {
             color = lighten(color, 0.2);
@@ -146,7 +147,7 @@ function paintTile(
         }
       }
 
-      if (x === 0 || y === 0 || x === tileSize - 1 || y === tileSize - 1) {
+      if (x === 0 || y === 0 || x === tileWidth - 1 || y === tileHeight - 1) {
         color = edge;
       } else if (x === 1 || y === 1) {
         color = highlight;
@@ -162,16 +163,14 @@ export function generateMaterialAtlas(spec: AssetSpec, plan: BuildPlan): Generat
     width: plan.textureWidth,
     height: plan.textureHeight,
   });
-  const tileWidth = Math.floor(plan.textureWidth / 2);
-  const tileHeight = Math.floor(plan.textureHeight / 2);
-  const tileSize = Math.min(tileWidth, tileHeight);
 
   for (const slot of plan.materialSlots) {
     paintTile(
       png,
       slot.uvOffset[0],
       slot.uvOffset[1],
-      tileSize,
+      slot.uvSize[0],
+      slot.uvSize[1],
       slot.material,
       slot.colorHint,
       `${spec.assetType}:${slot.slotId}:${slot.colorHint}`,

@@ -158,6 +158,7 @@ export const MaterialSlotSchema = z.object({
   label: z.string(),
   material: z.string(),
   uvOffset: Vector2Schema,
+  uvSize: Vector2Schema,
   colorHint: z.string(),
 });
 
@@ -185,6 +186,11 @@ export const BuildPlanSchema = z.object({
   notes: z.array(z.string()),
 });
 
+export const RepairLoopInputSchema = z.object({
+  enabled: z.boolean().default(true),
+  maxPasses: z.number().int().min(1).max(4).default(2),
+});
+
 export const BuildAssetFromSpecInputSchema = z.object({
   spec: AssetSpecSchema,
   prompt: z.string().trim().min(1).optional(),
@@ -193,6 +199,10 @@ export const BuildAssetFromSpecInputSchema = z.object({
   textureWidth: z.number().int().positive().default(256),
   textureHeight: z.number().int().positive().default(256),
   boxUv: z.boolean().default(false),
+  repairLoop: RepairLoopInputSchema.default({
+    enabled: true,
+    maxPasses: 2,
+  }),
   projectMode: z
     .enum(["replace_current_project", "new_project"])
     .default("replace_current_project"),
@@ -207,6 +217,10 @@ export const GenerateAssetFromTextInputSchema = z.object({
   textureWidth: z.number().int().positive().default(256),
   textureHeight: z.number().int().positive().default(256),
   boxUv: z.boolean().default(false),
+  repairLoop: RepairLoopInputSchema.default({
+    enabled: true,
+    maxPasses: 2,
+  }),
   projectMode: z.enum(["replace_current_project", "new_project"]).default("replace_current_project"),
   createTexture: z.boolean().default(true),
   renderPreview: z.boolean().default(true),
@@ -226,6 +240,10 @@ export const GenerateAssetFromImageInputSchema = z.object({
   textureWidth: z.number().int().positive().default(256),
   textureHeight: z.number().int().positive().default(256),
   boxUv: z.boolean().default(false),
+  repairLoop: RepairLoopInputSchema.default({
+    enabled: true,
+    maxPasses: 2,
+  }),
   projectMode: z
     .enum(["replace_current_project", "new_project"])
     .default("replace_current_project"),
@@ -271,6 +289,29 @@ export const QualityReportSchema = z.object({
   metrics: QualityMetricsSchema,
 });
 
+export const RepairAdjustmentSchema = z.object({
+  code: z.enum([
+    "compact_material_slots",
+    "share_repeated_uvs",
+    "recenter_scene",
+    "reground_asset",
+  ]),
+  description: z.string(),
+});
+
+export const RepairPassSchema = z.object({
+  pass: z.number().int().positive(),
+  qualityReport: QualityReportSchema,
+  adjustments: z.array(RepairAdjustmentSchema),
+});
+
+export const RepairHistorySchema = z.object({
+  enabled: z.boolean(),
+  totalPasses: z.number().int().positive(),
+  passes: z.array(RepairPassSchema),
+  appliedAdjustments: z.array(RepairAdjustmentSchema),
+});
+
 export const GenerateAssetFromTextResultSchema = z.object({
   prompt: z.string(),
   projectModeUsed: z.enum(["replace_current_project", "new_project"]),
@@ -280,6 +321,7 @@ export const GenerateAssetFromTextResultSchema = z.object({
   texture: TextureResultSchema.nullable(),
   createdCubes: z.array(CubeResultSchema),
   qualityReport: QualityReportSchema,
+  repairHistory: RepairHistorySchema,
   preview: PreviewRenderResultSchema.nullable(),
 });
 
@@ -293,6 +335,7 @@ export const BuildAssetFromSpecResultSchema = z.object({
   texture: TextureResultSchema.nullable(),
   createdCubes: z.array(CubeResultSchema),
   qualityReport: QualityReportSchema,
+  repairHistory: RepairHistorySchema,
   preview: PreviewRenderResultSchema.nullable(),
 });
 
@@ -307,6 +350,7 @@ export const GenerateAssetFromImageResultSchema = z.object({
   texture: TextureResultSchema.nullable(),
   createdCubes: z.array(CubeResultSchema),
   qualityReport: QualityReportSchema,
+  repairHistory: RepairHistorySchema,
   preview: PreviewRenderResultSchema.nullable(),
 });
 
@@ -338,6 +382,10 @@ export type GeneratedTextureAtlas = z.infer<typeof GeneratedTextureAtlasSchema>;
 export type QualityFinding = z.infer<typeof QualityFindingSchema>;
 export type QualityMetrics = z.infer<typeof QualityMetricsSchema>;
 export type QualityReport = z.infer<typeof QualityReportSchema>;
+export type RepairLoopInput = z.infer<typeof RepairLoopInputSchema>;
+export type RepairAdjustment = z.infer<typeof RepairAdjustmentSchema>;
+export type RepairPass = z.infer<typeof RepairPassSchema>;
+export type RepairHistory = z.infer<typeof RepairHistorySchema>;
 export type GenerateAssetFromTextResult = z.infer<typeof GenerateAssetFromTextResultSchema>;
 export type BuildAssetFromSpecResult = z.infer<typeof BuildAssetFromSpecResultSchema>;
 export type GenerateAssetFromImageResult = z.infer<typeof GenerateAssetFromImageResultSchema>;

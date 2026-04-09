@@ -24,6 +24,7 @@ export async function generateBlockbenchAssetFromText(options: {
       textureWidth: options.input.textureWidth,
       textureHeight: options.input.textureHeight,
       boxUv: options.input.boxUv,
+      repairLoop: options.input.repairLoop,
       projectMode: options.input.projectMode,
       createTexture: options.input.createTexture,
       renderPreview: options.input.renderPreview,
@@ -39,6 +40,7 @@ export async function generateBlockbenchAssetFromText(options: {
     texture: built.texture,
     createdCubes: built.createdCubes,
     qualityReport: built.qualityReport,
+    repairHistory: built.repairHistory,
     preview: built.preview,
   };
 }

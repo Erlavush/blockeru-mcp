@@ -61,6 +61,7 @@ function collectUvStats(plan: BuildPlan) {
   const width = plan.textureWidth;
   const height = plan.textureHeight;
   const occupancy = new Uint8Array(width * height);
+  const seenRects = new Set<string>();
   let overlapPixelCount = 0;
   let tinyFaceCount = 0;
   let packedFaceCount = 0;
@@ -82,10 +83,17 @@ function collectUvStats(plan: BuildPlan) {
       const y2 = clamp(Math.ceil(Math.max(face.uv[1], face.uv[3])), 0, height);
       const rectWidth = Math.max(0, x2 - x1);
       const rectHeight = Math.max(0, y2 - y1);
+      const rectKey = `${x1}:${y1}:${x2}:${y2}`;
 
       if (Math.min(rectWidth, rectHeight) < 6) {
         tinyFaceCount += 1;
       }
+
+      if (seenRects.has(rectKey)) {
+        continue;
+      }
+
+      seenRects.add(rectKey);
 
       for (let y = y1; y < y2; y += 1) {
         for (let x = x1; x < x2; x += 1) {
