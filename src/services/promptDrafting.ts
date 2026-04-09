@@ -208,6 +208,7 @@ export function draftAssetSpecFromPrompt(prompt: string, formatId: string): Asse
     assetType,
     style: lower.includes("minecraft") || lower.includes("voxel") ? "voxel" : "blockbench-low-poly",
     targetFormat: formatId,
+    sizeSource: "heuristic",
     estimatedSize: defaults.size,
     symmetry: lower.includes("symmetrical") || lower.includes("symmetric") ? "mirror_x" : "none",
     materials,

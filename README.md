@@ -10,6 +10,7 @@ Current status:
 - High-level text-to-model orchestration: implemented
 - High-level spec-to-model orchestration: implemented
 - High-level image-guided planning and generation: implemented
+- Image-guided measurement solving with block-to-unit anchors: implemented
 - Post-build quality scoring and UV/texture diagnostics: implemented
 
 ## Repo Layout
@@ -24,6 +25,21 @@ Current status:
 2. The MCP server calls the Blockbench bridge over localhost HTTP
 3. The Blockbench plugin executes deterministic edits inside Blockbench
 4. Codex iterates using project state and rendered previews
+
+## Measurement Model
+
+Blockeru now supports image-guided measurement solving for Minecraft-style assets:
+
+- `1 block = 16 x 16 x 16` model units
+- a measurement anchor converts image pixels into model units
+- measured axes override prompt heuristics
+- unmeasured axes can still fall back to the base prompt/image-guided spec
+
+Practical example:
+
+- if the object width measures `160 px` in the reference image
+- and that width is known to be `1 block`
+- then the solver uses `16 / 160 = 0.1` model units per pixel
 
 ## Install
 
@@ -76,7 +92,7 @@ codex mcp add blockeru --command node --args Z:\\blockeru-mcp\\dist\\index.js
 
 - add groups, bones, UV tools, and export tools
 - add real image-analysis ingestion instead of structured image guidance only
-- add preview critique and repair loop
+- add preview critique against reference images, not only geometric quality heuristics
 
 ## Current High-Level Tools
 
@@ -85,6 +101,7 @@ The MCP server now exposes these high-level orchestration tools:
 - `build_asset_from_spec`
 - `generate_asset_from_text`
 - `generate_asset_from_image_guidance`
+- `solve_image_measurements`
 - `generate_blockbench_asset_from_text` as a backward-compatible alias
 
 These tools follow the same core flow:
@@ -97,6 +114,13 @@ These tools follow the same core flow:
 6. builds the cubes in Blockbench
 7. scores the result with a quality report
 8. renders a preview back to the MCP client
+
+When using image-guided measurement:
+
+1. provide descriptive `imageGuidance`
+2. provide `measurementGuidance.anchor`
+3. provide `overallPixelSize` and optional per-part measurements
+4. let the solver convert image spans into snapped Blockbench units before the build starts
 
 Important:
 

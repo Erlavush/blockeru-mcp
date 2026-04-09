@@ -3,8 +3,10 @@ import type {
   AssetSpec,
   DraftAssetSpecFromImageInput,
   ImageGuidance,
+  MeasurementReport,
 } from "../contracts/schemas.js";
 import { draftAssetSpecFromPrompt } from "./promptDrafting.js";
+import { applyMeasurementGuidanceToSpec } from "./imageMeasurements.js";
 
 function normalizeWord(value: string): string {
   return value.trim().toLowerCase();
@@ -146,6 +148,16 @@ function mergePartMetadata(parts: AssetPart[], guidance: ImageGuidance): AssetPa
 export function draftAssetSpecFromImageGuidance(
   input: DraftAssetSpecFromImageInput,
 ): AssetSpec {
+  return draftAssetSpecFromImageGuidanceDetailed(input).spec;
+}
+
+export function draftAssetSpecFromImageGuidanceDetailed(
+  input: DraftAssetSpecFromImageInput,
+): {
+  baseSpec: AssetSpec;
+  spec: AssetSpec;
+  measurementReport: MeasurementReport | null;
+} {
   const inferredAssetType = inferAssetTypeHint(input.imageGuidance);
   const planningPrompt = buildImageGuidancePlanningPrompt(input.prompt, {
     ...input.imageGuidance,
@@ -172,7 +184,7 @@ export function draftAssetSpecFromImageGuidance(
     );
   }
 
-  return {
+  const mergedSpec: AssetSpec = {
     ...baseSpec,
     assetType: inferredAssetType ?? baseSpec.assetType,
     estimatedSize: normalizeProportions(
@@ -184,5 +196,24 @@ export function draftAssetSpecFromImageGuidance(
     palette: palette.length > 0 ? palette : baseSpec.palette,
     parts: mergePartMetadata(baseSpec.parts, input.imageGuidance),
     constraints,
+  };
+
+  if (!input.measurementGuidance) {
+    return {
+      baseSpec: mergedSpec,
+      spec: mergedSpec,
+      measurementReport: null,
+    };
+  }
+
+  const measured = applyMeasurementGuidanceToSpec({
+    spec: mergedSpec,
+    measurementGuidance: input.measurementGuidance,
+  });
+
+  return {
+    baseSpec: mergedSpec,
+    spec: measured.spec,
+    measurementReport: measured.measurementReport,
   };
 }

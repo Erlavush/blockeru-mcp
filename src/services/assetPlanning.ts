@@ -1038,8 +1038,10 @@ function planCabinet(spec: AssetSpec, directives: PromptDirectives, frame: Coord
   ] as [number, number, number];
   const shellThickness = clamp(Math.max(1, roundCoordinate(Math.min(width, depth) / 8)), 1, 2);
   const frontReveal = 1;
-  const frontThickness = 2;
-  const handleDepth = 2;
+  const frontThickness = clamp(doors?.size[2] ?? 1, 1, 2);
+  const handleWidth = clamp(handles?.size[0] ?? 1, 1, 2);
+  const handleHeight = clamp(handles?.size[1] ?? 2, 1, 3);
+  const handleDepth = clamp(handles?.size[2] ?? 1, 1, 2);
   const carcassFrontZ = bodyTo[2] - frontReveal;
   const frontStartZ = carcassFrontZ;
   const frontEndZ = carcassFrontZ + frontThickness;
@@ -1127,8 +1129,16 @@ function planCabinet(spec: AssetSpec, directives: PromptDirectives, frame: Coord
       cubes.push(
         cubeFromBounds(
           `${drawerName}_handle`,
-          [roundCoordinate(frame.centerX - 1), centerY - 1, frontEndZ],
-          [roundCoordinate(frame.centerX + 1), centerY + 1, frontEndZ + handleDepth],
+          [
+            roundCoordinate(frame.centerX - handleWidth / 2),
+            roundCoordinate(centerY - handleHeight / 2),
+            frontEndZ,
+          ],
+          [
+            roundCoordinate(frame.centerX - handleWidth / 2) + handleWidth,
+            roundCoordinate(centerY - handleHeight / 2) + handleHeight,
+            frontEndZ + handleDepth,
+          ],
           handleSlot,
           "Drawer pull protruding in front of the drawer face.",
         ),
@@ -1161,8 +1171,16 @@ function planCabinet(spec: AssetSpec, directives: PromptDirectives, frame: Coord
     cubes.push(
       cubeFromBounds(
         "handle_left",
-        [doorMidX - 2, roundCoordinate(height / 2) - 2, frontEndZ],
-        [doorMidX - 1, roundCoordinate(height / 2) + 2, frontEndZ + handleDepth],
+        [
+          doorMidX - 1 - handleWidth,
+          roundCoordinate(height / 2 - handleHeight / 2),
+          frontEndZ,
+        ],
+        [
+          doorMidX - 1,
+          roundCoordinate(height / 2 - handleHeight / 2) + handleHeight,
+          frontEndZ + handleDepth,
+        ],
         handleSlot,
         "Left door handle protruding beyond the door face.",
       ),
@@ -1170,8 +1188,16 @@ function planCabinet(spec: AssetSpec, directives: PromptDirectives, frame: Coord
     cubes.push(
       cubeFromBounds(
         "handle_right",
-        [doorMidX + 1, roundCoordinate(height / 2) - 2, frontEndZ],
-        [doorMidX + 2, roundCoordinate(height / 2) + 2, frontEndZ + handleDepth],
+        [
+          doorMidX + 1,
+          roundCoordinate(height / 2 - handleHeight / 2),
+          frontEndZ,
+        ],
+        [
+          doorMidX + 1 + handleWidth,
+          roundCoordinate(height / 2 - handleHeight / 2) + handleHeight,
+          frontEndZ + handleDepth,
+        ],
         handleSlot,
         "Right door handle protruding beyond the door face.",
       ),
@@ -1286,8 +1312,20 @@ export function planBuildFromAssetSpec(options: {
     ...DEFAULT_REPAIR_HINTS,
     ...options.repairHints,
   };
-  const directives = parsePromptDirectives(options.prompt);
-  const scaledSize = scaleVector(options.spec.estimatedSize, directives);
+  const parsedDirectives = parsePromptDirectives(options.prompt);
+  const directives =
+    options.spec.sizeSource === "measured"
+      ? {
+          ...parsedDirectives,
+          scaleX: 1,
+          scaleY: 1,
+          scaleZ: 1,
+        }
+      : parsedDirectives;
+  const scaledSize =
+    options.spec.sizeSource === "measured"
+      ? options.spec.estimatedSize
+      : scaleVector(options.spec.estimatedSize, directives);
   const spec: AssetSpec = {
     ...options.spec,
     estimatedSize: scaledSize,

@@ -130,6 +130,7 @@ export const AssetSpecSchema = z.object({
   assetType: z.string(),
   style: z.string(),
   targetFormat: z.string(),
+  sizeSource: z.enum(["heuristic", "measured"]).default("heuristic"),
   estimatedSize: Vector3Schema,
   symmetry: z.enum(["none", "mirror_x", "mirror_z", "radial"]),
   materials: z.array(z.string()),
@@ -150,6 +151,38 @@ export const ImageGuidanceSchema = z.object({
     .optional(),
   symmetry: z.enum(["none", "mirror_x", "mirror_z", "radial"]).optional(),
   proportionHint: Vector3Schema.optional(),
+  notes: z.string().trim().min(1).optional(),
+});
+
+export const MeasurementAxisSchema = z.enum(["x", "y", "z"]);
+export const MeasurementUnitSystemSchema = z.enum(["blocks", "model_units"]);
+export const AxisPixelSizeSchema = z
+  .object({
+    x: z.number().positive().optional(),
+    y: z.number().positive().optional(),
+    z: z.number().positive().optional(),
+  })
+  .refine((value) => value.x !== undefined || value.y !== undefined || value.z !== undefined, {
+    message: "At least one axis pixel measurement must be provided.",
+  });
+export const MeasurementAnchorSchema = z.object({
+  label: z.string().trim().min(1).default("reference"),
+  pixelLength: z.number().positive(),
+  knownSize: z.number().positive(),
+  unitSystem: MeasurementUnitSystemSchema.default("blocks"),
+  axis: MeasurementAxisSchema.optional(),
+});
+export const MeasuredPartInputSchema = z.object({
+  partName: z.string().trim().min(1),
+  pixelSize: AxisPixelSizeSchema,
+  notes: z.string().trim().min(1).optional(),
+});
+export const ImageMeasurementGuidanceSchema = z.object({
+  anchor: MeasurementAnchorSchema,
+  overallPixelSize: AxisPixelSizeSchema.optional(),
+  partMeasurements: z.array(MeasuredPartInputSchema).default([]),
+  unitsPerBlock: z.number().positive().default(16),
+  snapIncrement: z.number().positive().default(1),
   notes: z.string().trim().min(1).optional(),
 });
 
@@ -230,11 +263,13 @@ export const DraftAssetSpecFromImageInputSchema = z.object({
   prompt: z.string().trim().min(1),
   formatId: z.string().trim().min(1).default("free"),
   imageGuidance: ImageGuidanceSchema,
+  measurementGuidance: ImageMeasurementGuidanceSchema.optional(),
 });
 
 export const GenerateAssetFromImageInputSchema = z.object({
   prompt: z.string().trim().min(1),
   imageGuidance: ImageGuidanceSchema,
+  measurementGuidance: ImageMeasurementGuidanceSchema.optional(),
   projectName: z.string().trim().min(1).max(120).optional(),
   formatId: z.string().trim().min(1).default("free"),
   textureWidth: z.number().int().positive().default(256),
@@ -249,6 +284,13 @@ export const GenerateAssetFromImageInputSchema = z.object({
     .default("replace_current_project"),
   createTexture: z.boolean().default(true),
   renderPreview: z.boolean().default(true),
+});
+
+export const SolveImageMeasurementsInputSchema = z.object({
+  prompt: z.string().trim().min(1),
+  formatId: z.string().trim().min(1).default("free"),
+  imageGuidance: ImageGuidanceSchema,
+  measurementGuidance: ImageMeasurementGuidanceSchema,
 });
 
 export const GeneratedTextureAtlasSchema = z.object({
@@ -312,6 +354,31 @@ export const RepairHistorySchema = z.object({
   appliedAdjustments: z.array(RepairAdjustmentSchema),
 });
 
+export const MeasuredPartReportSchema = z.object({
+  partName: z.string(),
+  baseSize: Vector3Schema,
+  resolvedSize: Vector3Schema,
+  measuredAxes: z.array(MeasurementAxisSchema),
+  notes: z.array(z.string()),
+});
+
+export const MeasurementReportSchema = z.object({
+  unitsPerBlock: z.number().positive(),
+  unitsPerPixel: z.number().positive(),
+  anchorUnits: z.number().positive(),
+  baseEstimatedSize: Vector3Schema,
+  resolvedEstimatedSize: Vector3Schema,
+  measuredOverallAxes: z.array(MeasurementAxisSchema),
+  appliedPartMeasurements: z.array(MeasuredPartReportSchema),
+  warnings: z.array(z.string()),
+});
+
+export const SolveImageMeasurementsResultSchema = z.object({
+  baseSpec: AssetSpecSchema,
+  measuredSpec: AssetSpecSchema,
+  measurementReport: MeasurementReportSchema,
+});
+
 export const GenerateAssetFromTextResultSchema = z.object({
   prompt: z.string(),
   projectModeUsed: z.enum(["replace_current_project", "new_project"]),
@@ -344,6 +411,7 @@ export const GenerateAssetFromImageResultSchema = z.object({
   prompt: z.string(),
   projectModeUsed: z.enum(["replace_current_project", "new_project"]),
   imageGuidance: ImageGuidanceSchema,
+  measurementReport: MeasurementReportSchema.nullable(),
   spec: AssetSpecSchema,
   plan: BuildPlanSchema,
   project: ProjectStateSchema,
@@ -371,6 +439,12 @@ export type PromptAnalysisInput = z.infer<typeof PromptAnalysisInputSchema>;
 export type AssetPart = z.infer<typeof AssetPartSchema>;
 export type AssetSpec = z.infer<typeof AssetSpecSchema>;
 export type ImageGuidance = z.infer<typeof ImageGuidanceSchema>;
+export type MeasurementAxis = z.infer<typeof MeasurementAxisSchema>;
+export type MeasurementUnitSystem = z.infer<typeof MeasurementUnitSystemSchema>;
+export type AxisPixelSize = z.infer<typeof AxisPixelSizeSchema>;
+export type MeasurementAnchor = z.infer<typeof MeasurementAnchorSchema>;
+export type MeasuredPartInput = z.infer<typeof MeasuredPartInputSchema>;
+export type ImageMeasurementGuidance = z.infer<typeof ImageMeasurementGuidanceSchema>;
 export type MaterialSlot = z.infer<typeof MaterialSlotSchema>;
 export type PlannedCube = z.infer<typeof PlannedCubeSchema>;
 export type BuildPlan = z.infer<typeof BuildPlanSchema>;
@@ -378,6 +452,7 @@ export type BuildAssetFromSpecInput = z.infer<typeof BuildAssetFromSpecInputSche
 export type GenerateAssetFromTextInput = z.infer<typeof GenerateAssetFromTextInputSchema>;
 export type DraftAssetSpecFromImageInput = z.infer<typeof DraftAssetSpecFromImageInputSchema>;
 export type GenerateAssetFromImageInput = z.infer<typeof GenerateAssetFromImageInputSchema>;
+export type SolveImageMeasurementsInput = z.infer<typeof SolveImageMeasurementsInputSchema>;
 export type GeneratedTextureAtlas = z.infer<typeof GeneratedTextureAtlasSchema>;
 export type QualityFinding = z.infer<typeof QualityFindingSchema>;
 export type QualityMetrics = z.infer<typeof QualityMetricsSchema>;
@@ -386,6 +461,9 @@ export type RepairLoopInput = z.infer<typeof RepairLoopInputSchema>;
 export type RepairAdjustment = z.infer<typeof RepairAdjustmentSchema>;
 export type RepairPass = z.infer<typeof RepairPassSchema>;
 export type RepairHistory = z.infer<typeof RepairHistorySchema>;
+export type MeasuredPartReport = z.infer<typeof MeasuredPartReportSchema>;
+export type MeasurementReport = z.infer<typeof MeasurementReportSchema>;
+export type SolveImageMeasurementsResult = z.infer<typeof SolveImageMeasurementsResultSchema>;
 export type GenerateAssetFromTextResult = z.infer<typeof GenerateAssetFromTextResultSchema>;
 export type BuildAssetFromSpecResult = z.infer<typeof BuildAssetFromSpecResultSchema>;
 export type GenerateAssetFromImageResult = z.infer<typeof GenerateAssetFromImageResultSchema>;

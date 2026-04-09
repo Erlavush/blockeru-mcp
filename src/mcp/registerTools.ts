@@ -10,11 +10,15 @@ import {
   ProjectClearInputSchema,
   ProjectCreateInputSchema,
   PromptAnalysisInputSchema,
+  SolveImageMeasurementsInputSchema,
   TextureCreateInputSchema,
 } from "../contracts/schemas.js";
 import { SERVER_VERSION } from "../constants.js";
 import type { BridgeClient } from "../services/bridgeClient.js";
-import { draftAssetSpecFromImageGuidance } from "../services/imageGuidancePlanning.js";
+import {
+  draftAssetSpecFromImageGuidance,
+  draftAssetSpecFromImageGuidanceDetailed,
+} from "../services/imageGuidancePlanning.js";
 import { draftAssetSpecFromPrompt } from "../services/promptDrafting.js";
 import { buildBlockbenchAssetFromSpec } from "../services/specBuildOrchestrator.js";
 import { generateBlockbenchAssetFromImageGuidance } from "../services/imageBuildOrchestrator.js";
@@ -315,6 +319,28 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
         return okResult(spec);
       } catch (error) {
         return errorResult("Failed to draft an asset spec from image guidance.", error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "solve_image_measurements",
+    {
+      title: "Solve Image Measurements",
+      description:
+        "Convert an anchored image measurement set into Blockbench model units and return both the base spec and the measured spec before building.",
+      inputSchema: SolveImageMeasurementsInputSchema.shape,
+    },
+    async (input) => {
+      try {
+        const result = draftAssetSpecFromImageGuidanceDetailed(input);
+        return okResult({
+          baseSpec: result.baseSpec,
+          measuredSpec: result.spec,
+          measurementReport: result.measurementReport,
+        });
+      } catch (error) {
+        return errorResult("Failed to solve image-guided measurements.", error);
       }
     },
   );

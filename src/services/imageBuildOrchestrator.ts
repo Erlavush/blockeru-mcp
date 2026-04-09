@@ -5,7 +5,7 @@ import type {
 import type { BridgeClient } from "./bridgeClient.js";
 import {
   buildImageGuidancePlanningPrompt,
-  draftAssetSpecFromImageGuidance,
+  draftAssetSpecFromImageGuidanceDetailed,
 } from "./imageGuidancePlanning.js";
 import { buildBlockbenchAssetFromSpec } from "./specBuildOrchestrator.js";
 
@@ -17,15 +17,16 @@ export async function generateBlockbenchAssetFromImageGuidance(options: {
     options.input.prompt,
     options.input.imageGuidance,
   );
-  const draftedSpec = draftAssetSpecFromImageGuidance({
+  const drafted = draftAssetSpecFromImageGuidanceDetailed({
     prompt: options.input.prompt,
     formatId: options.input.formatId,
     imageGuidance: options.input.imageGuidance,
+    measurementGuidance: options.input.measurementGuidance,
   });
   const built = await buildBlockbenchAssetFromSpec({
     bridge: options.bridge,
     input: {
-      spec: draftedSpec,
+      spec: drafted.spec,
       prompt: planningPrompt,
       projectName: options.input.projectName,
       formatId: options.input.formatId,
@@ -44,6 +45,7 @@ export async function generateBlockbenchAssetFromImageGuidance(options: {
     prompt: options.input.prompt,
     projectModeUsed: built.projectModeUsed,
     imageGuidance: options.input.imageGuidance,
+    measurementReport: drafted.measurementReport,
     spec: built.spec,
     plan: built.plan,
     project: built.project,
