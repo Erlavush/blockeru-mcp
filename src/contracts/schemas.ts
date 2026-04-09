@@ -87,6 +87,7 @@ export const AssetPartSchema = z.object({
   name: z.string(),
   shape: z.enum(["cube", "slab", "panel", "rod", "cluster"]),
   size: Vector3Schema,
+  material: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -103,6 +104,66 @@ export const AssetSpecSchema = z.object({
   constraints: z.array(z.string()),
 });
 
+export const MaterialSlotSchema = z.object({
+  slotId: z.string(),
+  label: z.string(),
+  material: z.string(),
+  uvOffset: Vector2Schema,
+  colorHint: z.string(),
+});
+
+export const PlannedCubeSchema = z.object({
+  name: z.string(),
+  from: Vector3Schema,
+  to: Vector3Schema,
+  origin: Vector3Schema,
+  uvOffset: Vector2Schema.optional(),
+  materialSlot: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export const BuildPlanSchema = z.object({
+  projectName: z.string(),
+  formatId: z.string(),
+  textureWidth: z.number().int().positive(),
+  textureHeight: z.number().int().positive(),
+  boxUv: z.boolean(),
+  symmetry: z.string(),
+  estimatedSize: Vector3Schema,
+  materialSlots: z.array(MaterialSlotSchema),
+  cubes: z.array(PlannedCubeSchema),
+  notes: z.array(z.string()),
+});
+
+export const GenerateAssetFromTextInputSchema = z.object({
+  prompt: z.string().trim().min(1),
+  projectName: z.string().trim().min(1).max(120).optional(),
+  formatId: z.string().trim().min(1).default("free"),
+  textureWidth: z.number().int().positive().default(256),
+  textureHeight: z.number().int().positive().default(256),
+  boxUv: z.boolean().default(true),
+  createTexture: z.boolean().default(true),
+  renderPreview: z.boolean().default(true),
+});
+
+export const GeneratedTextureAtlasSchema = z.object({
+  name: z.string(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  dataUrl: z.string().startsWith("data:image/png;base64,"),
+  materialSlots: z.array(MaterialSlotSchema),
+});
+
+export const GenerateAssetFromTextResultSchema = z.object({
+  prompt: z.string(),
+  spec: AssetSpecSchema,
+  plan: BuildPlanSchema,
+  project: ProjectStateSchema,
+  texture: TextureResultSchema.nullable(),
+  createdCubes: z.array(CubeResultSchema),
+  preview: PreviewRenderResultSchema.nullable(),
+});
+
 export type ProjectCreateInput = z.infer<typeof ProjectCreateInputSchema>;
 export type ProjectState = z.infer<typeof ProjectStateSchema>;
 export type BridgeHealth = z.infer<typeof BridgeHealthSchema>;
@@ -113,4 +174,11 @@ export type TextureResult = z.infer<typeof TextureResultSchema>;
 export type PreviewRenderInput = z.infer<typeof PreviewRenderInputSchema>;
 export type PreviewRenderResult = z.infer<typeof PreviewRenderResultSchema>;
 export type PromptAnalysisInput = z.infer<typeof PromptAnalysisInputSchema>;
+export type AssetPart = z.infer<typeof AssetPartSchema>;
 export type AssetSpec = z.infer<typeof AssetSpecSchema>;
+export type MaterialSlot = z.infer<typeof MaterialSlotSchema>;
+export type PlannedCube = z.infer<typeof PlannedCubeSchema>;
+export type BuildPlan = z.infer<typeof BuildPlanSchema>;
+export type GenerateAssetFromTextInput = z.infer<typeof GenerateAssetFromTextInputSchema>;
+export type GeneratedTextureAtlas = z.infer<typeof GeneratedTextureAtlasSchema>;
+export type GenerateAssetFromTextResult = z.infer<typeof GenerateAssetFromTextResultSchema>;

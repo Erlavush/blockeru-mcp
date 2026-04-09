@@ -28,6 +28,10 @@
     reportStatus(`${PLUGIN_TITLE} failed: ${startupError}`, 6000);
   }
 
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   function getStatusText(statusCode) {
     const texts = {
       200: "OK",
@@ -185,12 +189,27 @@
       project.box_uv = payload.boxUv;
     }
 
+    const textureWidth = Number(payload.textureWidth || 64);
+    const textureHeight = Number(payload.textureHeight || 64);
+
     if (typeof setProjectResolution === "function") {
-      setProjectResolution(
-        Number(payload.textureWidth || 64),
-        Number(payload.textureHeight || 64),
-        true,
-      );
+      try {
+        setProjectResolution(textureWidth, textureHeight, true);
+      } catch (_error) {
+        // Fall back to direct assignment below.
+      }
+    }
+
+    project.texture_width = textureWidth;
+    project.texture_height = textureHeight;
+
+    if (typeof Canvas !== "undefined") {
+      if (typeof Canvas.updateAllUVs === "function") {
+        Canvas.updateAllUVs();
+      }
+      if (typeof Canvas.updateLayeredTextures === "function") {
+        Canvas.updateLayeredTextures();
+      }
     }
 
     return getProjectState();
@@ -252,7 +271,27 @@
     };
   }
 
-  function createTexture(payload) {
+  async function waitForTextureReady(texture, timeoutMs) {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+      const width = Number(texture.width || texture.img?.naturalWidth || texture.img?.width || 0);
+      const height = Number(texture.height || texture.img?.naturalHeight || texture.img?.height || 0);
+
+      if (width > 0 && height > 0) {
+        return { width, height };
+      }
+
+      await sleep(30);
+    }
+
+    return {
+      width: Number(texture.width || texture.img?.naturalWidth || texture.img?.width || 0),
+      height: Number(texture.height || texture.img?.naturalHeight || texture.img?.height || 0),
+    };
+  }
+
+  async function createTexture(payload) {
     ensure(currentProject(), "No Blockbench project is open.");
     ensure(typeof Texture === "function", "Blockbench texture API is not available.");
     ensure(
@@ -267,6 +306,7 @@
     });
 
     texture.fromDataURL(payload.dataUrl).add(false, true);
+    const size = await waitForTextureReady(texture, 1500);
 
     if (payload.setAsDefault !== false && typeof texture.setAsDefaultTexture === "function") {
       texture.setAsDefaultTexture();
@@ -279,8 +319,8 @@
     return {
       uuid: texture.uuid,
       name: texture.name,
-      width: texture.width,
-      height: texture.height,
+      width: size.width,
+      height: size.height,
       useAsDefault: !!texture.use_as_default,
     };
   }

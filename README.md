@@ -7,6 +7,7 @@ Current status:
 - MCP server scaffold: implemented
 - Blockbench bridge plugin: implemented as a starter bridge
 - Live bridge primitives: health, create project, read project state, add cube, create texture, render preview
+- High-level text-to-model orchestration: implemented
 - High-level image-to-model orchestration: planned next
 
 ## Repo Layout
@@ -72,6 +73,20 @@ codex mcp add blockeru --command node --args Z:\\blockeru-mcp\\dist\\index.js
 ## Next Steps
 
 - add groups, bones, UV tools, and export tools
-- add prompt-to-asset planning
 - add image-to-asset planning
 - add preview critique and repair loop
+
+## Current High-Level Tool
+
+The MCP server now exposes a high-level orchestration tool:
+
+- `generate_blockbench_asset_from_text`
+
+This tool:
+
+1. drafts an asset spec from the prompt
+2. creates a fresh Blockbench project
+3. plans deterministic cube placement
+4. generates a procedural material atlas
+5. builds the cubes in Blockbench
+6. renders a preview back to the MCP client

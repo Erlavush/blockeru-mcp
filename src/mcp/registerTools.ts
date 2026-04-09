@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerConfig } from "../config.js";
 import {
   CubeCreateInputSchema,
+  GenerateAssetFromTextInputSchema,
   PreviewRenderInputSchema,
   ProjectCreateInputSchema,
   PromptAnalysisInputSchema,
@@ -10,6 +11,7 @@ import {
 import { SERVER_VERSION } from "../constants.js";
 import type { BridgeClient } from "../services/bridgeClient.js";
 import { draftAssetSpecFromPrompt } from "../services/promptDrafting.js";
+import { generateBlockbenchAssetFromText } from "../services/textBuildOrchestrator.js";
 import {
   dataUrlToImagePayload,
   errorResult,
@@ -162,6 +164,51 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
         );
       } catch (error) {
         return errorResult("Failed to render Blockbench preview.", error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "generate_blockbench_asset_from_text",
+    {
+      title: "Generate Blockbench Asset From Text",
+      description:
+        "Create a fresh Blockbench project from a text prompt, plan a cube layout, generate a starter texture atlas, build the asset, and return a preview.",
+      inputSchema: GenerateAssetFromTextInputSchema.shape,
+    },
+    async (input) => {
+      try {
+        const result = await generateBlockbenchAssetFromText({
+          bridge: deps.bridge,
+          input,
+        });
+
+        if (result.preview) {
+          const image = dataUrlToImagePayload(result.preview.dataUrl);
+
+          if (image) {
+            return okResultWithImage(
+              {
+                prompt: result.prompt,
+                spec: result.spec,
+                plan: result.plan,
+                project: result.project,
+                texture: result.texture,
+                createdCubes: result.createdCubes,
+                preview: {
+                  mimeType: result.preview.mimeType,
+                  width: result.preview.width,
+                  height: result.preview.height,
+                },
+              },
+              image,
+            );
+          }
+        }
+
+        return okResult(result);
+      } catch (error) {
+        return errorResult("Failed to generate the Blockbench asset from text.", error);
       }
     },
   );
