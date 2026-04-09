@@ -2,6 +2,8 @@ import type {
   AssetPart,
   AssetSpec,
   BuildPlan,
+  CubeFaceLayout,
+  CubeFacesLayout,
   MaterialSlot,
   PlannedCube,
 } from "../contracts/schemas.js";
@@ -25,12 +27,14 @@ type CoordinateFrame = {
   shiftZ: number;
 };
 
-const MATERIAL_OFFSETS: Record<string, [number, number]> = {
+const MATERIAL_SLOT_GRID: Record<string, [number, number]> = {
   primary: [0, 0],
-  secondary: [128, 0],
-  accent: [0, 128],
-  neutral: [128, 128],
+  secondary: [1, 0],
+  accent: [0, 1],
+  neutral: [1, 1],
 };
+
+const FACE_DIRECTIONS = ["north", "south", "east", "west", "up", "down"] as const;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -100,10 +104,7 @@ function inferDrawerCount(prompt: string): number {
     return 3;
   }
 
-  if (
-    prompt.includes("four drawer") ||
-    prompt.includes("4 drawer")
-  ) {
+  if (prompt.includes("four drawer") || prompt.includes("4 drawer")) {
     return 4;
   }
 
@@ -116,7 +117,6 @@ function inferDrawerCount(prompt: string): number {
 
 function parsePromptDirectives(prompt: string): PromptDirectives {
   const lower = prompt.toLowerCase();
-
   const sizeScale =
     detectScale(lower, "small", 0.85) *
     detectScale(lower, "large", 1.2) *
@@ -161,26 +161,41 @@ function sanitizeProjectName(prompt: string, fallback: string): string {
   return cleaned || fallback;
 }
 
-function makeSlot(slotId: string, label: string, material: string, colorHint: string): MaterialSlot {
+function makeSlot(
+  slotId: string,
+  label: string,
+  material: string,
+  colorHint: string,
+  textureWidth: number,
+  textureHeight: number,
+): MaterialSlot {
+  const gridPosition = MATERIAL_SLOT_GRID[slotId] ?? MATERIAL_SLOT_GRID.neutral;
+  const tileWidth = Math.floor(textureWidth / 2);
+  const tileHeight = Math.floor(textureHeight / 2);
+
   return {
     slotId,
     label,
     material,
-    uvOffset: MATERIAL_OFFSETS[slotId] ?? [128, 128],
+    uvOffset: [gridPosition[0] * tileWidth, gridPosition[1] * tileHeight],
     colorHint,
   };
 }
 
-function pickMaterialSlots(spec: AssetSpec): MaterialSlot[] {
+function pickMaterialSlots(
+  spec: AssetSpec,
+  textureWidth: number,
+  textureHeight: number,
+): MaterialSlot[] {
   const primaryMaterial = spec.materials[0] ?? "wood";
   const secondaryMaterial = spec.materials[1] ?? primaryMaterial;
   const accentColor = spec.palette[0] ?? "natural";
 
   return [
-    makeSlot("primary", "Primary", primaryMaterial, accentColor),
-    makeSlot("secondary", "Secondary", secondaryMaterial, accentColor),
-    makeSlot("accent", "Accent", accentColor, accentColor),
-    makeSlot("neutral", "Neutral", "neutral", "gray"),
+    makeSlot("primary", "Primary", primaryMaterial, accentColor, textureWidth, textureHeight),
+    makeSlot("secondary", "Secondary", secondaryMaterial, accentColor, textureWidth, textureHeight),
+    makeSlot("accent", "Accent", accentColor, accentColor, textureWidth, textureHeight),
+    makeSlot("neutral", "Neutral", "neutral", "gray", textureWidth, textureHeight),
   ];
 }
 
@@ -200,9 +215,127 @@ function cubeFromBounds(
       roundCoordinate((from[1] + to[1]) / 2),
       roundCoordinate((from[2] + to[2]) / 2),
     ],
-    uvOffset: MATERIAL_OFFSETS[materialSlot] ?? MATERIAL_OFFSETS.primary,
     materialSlot,
     notes,
+  };
+}
+
+function getCubeDimensions(cube: PlannedCube): {
+  width: number;
+  height: number;
+  depth: number;
+} {
+  return {
+    width: Math.max(1, roundSize(Math.abs(cube.to[0] - cube.from[0]))),
+    height: Math.max(1, roundSize(Math.abs(cube.to[1] - cube.from[1]))),
+    depth: Math.max(1, roundSize(Math.abs(cube.to[2] - cube.from[2]))),
+  };
+}
+
+function toFaceRect(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): CubeFaceLayout {
+  return {
+    uv: [x, y, x + width, y + height],
+  };
+}
+
+function tryPackScaledFaces(options: {
+  baseRects: Array<{ face: (typeof FACE_DIRECTIONS)[number]; width: number; height: number }>;
+  tileWidth: number;
+  tileHeight: number;
+  scale: number;
+  padding: number;
+  offset: readonly [number, number];
+}): CubeFacesLayout | null {
+  let cursorX = options.padding;
+  let cursorY = options.padding;
+  let rowHeight = 0;
+  const layout: Partial<Record<(typeof FACE_DIRECTIONS)[number], CubeFaceLayout>> = {};
+
+  for (const rect of options.baseRects) {
+    const width = Math.max(2, rect.width * options.scale);
+    const height = Math.max(2, rect.height * options.scale);
+
+    if (cursorX + width + options.padding > options.tileWidth) {
+      cursorX = options.padding;
+      cursorY += rowHeight + options.padding;
+      rowHeight = 0;
+    }
+
+    if (cursorY + height + options.padding > options.tileHeight) {
+      return null;
+    }
+
+    layout[rect.face] = toFaceRect(
+      options.offset[0] + cursorX,
+      options.offset[1] + cursorY,
+      width,
+      height,
+    );
+
+    cursorX += width + options.padding;
+    rowHeight = Math.max(rowHeight, height);
+  }
+
+  return layout as CubeFacesLayout;
+}
+
+function buildExpandedFaceUvs(
+  cube: PlannedCube,
+  slot: MaterialSlot,
+  textureWidth: number,
+  textureHeight: number,
+): CubeFacesLayout {
+  const { width, height, depth } = getCubeDimensions(cube);
+  const baseRects = [
+    { face: "north" as const, width, height },
+    { face: "south" as const, width, height },
+    { face: "east" as const, width: depth, height },
+    { face: "west" as const, width: depth, height },
+    { face: "up" as const, width, height: depth },
+    { face: "down" as const, width, height: depth },
+  ].sort((left, right) => right.height * right.width - left.height * left.width);
+  const tileWidth = Math.max(8, Math.floor(textureWidth / 2));
+  const tileHeight = Math.max(8, Math.floor(textureHeight / 2));
+  const padding = Math.max(2, Math.floor(Math.min(tileWidth, tileHeight) / 32));
+  const maxBaseWidth = Math.max(...baseRects.map((rect) => rect.width));
+  const maxBaseHeight = Math.max(...baseRects.map((rect) => rect.height));
+  const maxScale = Math.max(
+    1,
+    Math.floor(
+      Math.min(
+        (tileWidth - padding * 4) / Math.max(1, maxBaseWidth),
+        (tileHeight - padding * 4) / Math.max(1, maxBaseHeight),
+      ),
+    ),
+  );
+
+  for (let scale = maxScale; scale >= 1; scale -= 1) {
+    const packed = tryPackScaledFaces({
+      baseRects,
+      tileWidth,
+      tileHeight,
+      scale,
+      padding,
+      offset: slot.uvOffset,
+    });
+
+    if (packed) {
+      return packed;
+    }
+  }
+
+  return {
+    north: toFaceRect(slot.uvOffset[0], slot.uvOffset[1], Math.max(2, width), Math.max(2, height)),
+    south: toFaceRect(slot.uvOffset[0], slot.uvOffset[1], Math.max(2, width), Math.max(2, height)),
+    east: toFaceRect(slot.uvOffset[0], slot.uvOffset[1], Math.max(2, depth), Math.max(2, height)),
+    west: toFaceRect(slot.uvOffset[0], slot.uvOffset[1], Math.max(2, depth), Math.max(2, height)),
+    up: toFaceRect(slot.uvOffset[0], slot.uvOffset[1], Math.max(2, width), Math.max(2, depth)),
+    down: toFaceRect(slot.uvOffset[0], slot.uvOffset[1], Math.max(2, width), Math.max(2, depth)),
   };
 }
 
@@ -218,8 +351,16 @@ function centeredBounds(
   const halfDepth = depth / 2;
 
   return {
-    from: [roundCoordinate(centerX - halfWidth), roundCoordinate(baseY), roundCoordinate(centerZ - halfDepth)],
-    to: [roundCoordinate(centerX + halfWidth), roundCoordinate(baseY + height), roundCoordinate(centerZ + halfDepth)],
+    from: [
+      roundCoordinate(centerX - halfWidth),
+      roundCoordinate(baseY),
+      roundCoordinate(centerZ - halfDepth),
+    ],
+    to: [
+      roundCoordinate(centerX + halfWidth),
+      roundCoordinate(baseY + height),
+      roundCoordinate(centerZ + halfDepth),
+    ],
   };
 }
 
@@ -416,7 +557,14 @@ function planTable(spec: AssetSpec, directives: PromptDirectives, frame: Coordin
   ];
 
   legPositions.forEach(([x, z], index) => {
-    cubes.push(cubeFromBounds(`table_leg_${index + 1}`, [x, 0, z], [x + legThickness, legHeight, z + legThickness], legSlot));
+    cubes.push(
+      cubeFromBounds(
+        `table_leg_${index + 1}`,
+        [x, 0, z],
+        [x + legThickness, legHeight, z + legThickness],
+        legSlot,
+      ),
+    );
   });
 
   return cubes;
@@ -492,8 +640,22 @@ function planShelf(spec: AssetSpec, directives: PromptDirectives, frame: Coordin
   const sideSlot = getMaterialSlotForPart(sidePanels, spec);
   const shelfSlot = getMaterialSlotForPart(shelves, spec);
 
-  cubes.push(cubeFromBounds("side_left", [roundCoordinate(frame.centerX - width / 2), 0, roundCoordinate(frame.centerZ - depth / 2)], [roundCoordinate(frame.centerX - width / 2) + sideThickness, height, roundCoordinate(frame.centerZ + depth / 2)], sideSlot));
-  cubes.push(cubeFromBounds("side_right", [roundCoordinate(frame.centerX + width / 2) - sideThickness, 0, roundCoordinate(frame.centerZ - depth / 2)], [roundCoordinate(frame.centerX + width / 2), height, roundCoordinate(frame.centerZ + depth / 2)], sideSlot));
+  cubes.push(
+    cubeFromBounds(
+      "side_left",
+      [roundCoordinate(frame.centerX - width / 2), 0, roundCoordinate(frame.centerZ - depth / 2)],
+      [roundCoordinate(frame.centerX - width / 2) + sideThickness, height, roundCoordinate(frame.centerZ + depth / 2)],
+      sideSlot,
+    ),
+  );
+  cubes.push(
+    cubeFromBounds(
+      "side_right",
+      [roundCoordinate(frame.centerX + width / 2) - sideThickness, 0, roundCoordinate(frame.centerZ - depth / 2)],
+      [roundCoordinate(frame.centerX + width / 2), height, roundCoordinate(frame.centerZ + depth / 2)],
+      sideSlot,
+    ),
+  );
 
   const usableWidthFrom = roundCoordinate(frame.centerX - width / 2) + sideThickness;
   const usableWidthTo = roundCoordinate(frame.centerX + width / 2) - sideThickness;
@@ -523,8 +685,16 @@ function planCabinet(spec: AssetSpec, directives: PromptDirectives, frame: Coord
   const height = roundSize(spec.estimatedSize[1]);
   const depth = roundSize(spec.estimatedSize[2]);
   const cubes: PlannedCube[] = [];
-  const bodyFrom = [roundCoordinate(frame.centerX - width / 2), 0, roundCoordinate(frame.centerZ - depth / 2)] as [number, number, number];
-  const bodyTo = [roundCoordinate(frame.centerX + width / 2), height, roundCoordinate(frame.centerZ + depth / 2)] as [number, number, number];
+  const bodyFrom = [
+    roundCoordinate(frame.centerX - width / 2),
+    0,
+    roundCoordinate(frame.centerZ - depth / 2),
+  ] as [number, number, number];
+  const bodyTo = [
+    roundCoordinate(frame.centerX + width / 2),
+    height,
+    roundCoordinate(frame.centerZ + depth / 2),
+  ] as [number, number, number];
 
   cubes.push(cubeFromBounds("cabinet_body", bodyFrom, bodyTo, getMaterialSlotForPart(body, spec)));
 
@@ -554,7 +724,6 @@ function planCabinet(spec: AssetSpec, directives: PromptDirectives, frame: Coord
           getMaterialSlotForPart(doors, spec),
         ),
       );
-
       cubes.push(
         cubeFromBounds(
           `${drawerName}_handle`,
@@ -614,7 +783,9 @@ function planBed(spec: AssetSpec, directives: PromptDirectives, frame: Coordinat
   const depth = roundSize(spec.estimatedSize[2]);
   const frameHeight = clamp(bedFrame?.size[1] ?? 6, 4, 8);
   const mattressHeight = clamp(mattress?.size[1] ?? 4, 3, 6);
-  const headboardHeight = directives.tallHeadboard ? clamp(height, 10, 18) : clamp(headboard?.size[1] ?? 8, 6, 12);
+  const headboardHeight = directives.tallHeadboard
+    ? clamp(height, 10, 18)
+    : clamp(headboard?.size[1] ?? 8, 6, 12);
   const cubes: PlannedCube[] = [];
 
   cubes.push(
@@ -662,7 +833,9 @@ function planGeneric(spec: AssetSpec): PlannedCube[] {
   ];
 }
 
-function selectPlanner(spec: AssetSpec): (spec: AssetSpec, directives: PromptDirectives, frame: CoordinateFrame) => PlannedCube[] {
+function selectPlanner(
+  spec: AssetSpec,
+): (spec: AssetSpec, directives: PromptDirectives, frame: CoordinateFrame) => PlannedCube[] {
   switch (spec.assetType) {
     case "chair":
       return planChair;
@@ -699,8 +872,21 @@ export function planBuildFromAssetSpec(options: {
   };
   const frame = getCoordinateFrame(options.formatId);
   const planner = selectPlanner(spec);
-  const cubes = planner(spec, directives, frame);
-  const materialSlots = pickMaterialSlots(spec);
+  const draftCubes = planner(spec, directives, frame);
+  const materialSlots = pickMaterialSlots(spec, options.textureWidth, options.textureHeight);
+  const slotById = new Map(materialSlots.map((slot) => [slot.slotId, slot]));
+  const cubes = draftCubes.map((cube) => {
+    const slot = cube.materialSlot ? slotById.get(cube.materialSlot) : materialSlots[0];
+
+    return {
+      ...cube,
+      uvOffset: slot?.uvOffset,
+      faces:
+        options.boxUv || !slot
+          ? undefined
+          : buildExpandedFaceUvs(cube, slot, options.textureWidth, options.textureHeight),
+    };
+  });
   const projectName = options.projectName ?? sanitizeProjectName(options.prompt, spec.assetType);
 
   return {
@@ -716,7 +902,9 @@ export function planBuildFromAssetSpec(options: {
     notes: [
       "Generated by the deterministic text planner.",
       `Coordinates are centered around the Blockbench scene origin for format "${options.formatId}".`,
-      "Material slots are mapped onto a procedural 2x2 atlas.",
+      options.boxUv
+        ? "Material slots are mapped onto a procedural 2x2 atlas with Blockbench box UV."
+        : "Material slots are mapped onto a procedural 2x2 atlas with expanded per-face UV packing.",
     ],
   };
 }

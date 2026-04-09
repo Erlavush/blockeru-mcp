@@ -2,6 +2,33 @@ import { z } from "zod";
 
 export const Vector3Schema = z.tuple([z.number(), z.number(), z.number()]);
 export const Vector2Schema = z.tuple([z.number(), z.number()]);
+export const Vector4Schema = z.tuple([z.number(), z.number(), z.number(), z.number()]);
+export const CubeFaceDirectionSchema = z.enum([
+  "north",
+  "south",
+  "east",
+  "west",
+  "up",
+  "down",
+]);
+export const CubeFaceLayoutSchema = z
+  .object({
+    uv: Vector4Schema,
+    rotation: z.number().int().optional(),
+    enabled: z.boolean().optional(),
+  })
+  .strict();
+export const CubeFacesLayoutSchema = z
+  .object({
+    north: CubeFaceLayoutSchema.optional(),
+    south: CubeFaceLayoutSchema.optional(),
+    east: CubeFaceLayoutSchema.optional(),
+    west: CubeFaceLayoutSchema.optional(),
+    up: CubeFaceLayoutSchema.optional(),
+    down: CubeFaceLayoutSchema.optional(),
+  })
+  .strict()
+  .optional();
 
 export const ProjectCreateInputSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
@@ -45,6 +72,7 @@ export const CubeCreateInputSchema = z.object({
   to: Vector3Schema,
   origin: Vector3Schema.default([8, 8, 8]),
   uvOffset: Vector2Schema.optional(),
+  faces: CubeFacesLayoutSchema,
   colorIndex: z.number().int().nonnegative().max(7).optional(),
   boxUv: z.boolean().optional(),
   textureRef: z.string().trim().min(1).optional(),
@@ -139,6 +167,7 @@ export const PlannedCubeSchema = z.object({
   to: Vector3Schema,
   origin: Vector3Schema,
   uvOffset: Vector2Schema.optional(),
+  faces: CubeFacesLayoutSchema,
   materialSlot: z.string().optional(),
   notes: z.string().optional(),
 });
@@ -163,7 +192,7 @@ export const BuildAssetFromSpecInputSchema = z.object({
   formatId: z.string().trim().min(1).default("free"),
   textureWidth: z.number().int().positive().default(256),
   textureHeight: z.number().int().positive().default(256),
-  boxUv: z.boolean().default(true),
+  boxUv: z.boolean().default(false),
   projectMode: z
     .enum(["replace_current_project", "new_project"])
     .default("replace_current_project"),
@@ -177,7 +206,7 @@ export const GenerateAssetFromTextInputSchema = z.object({
   formatId: z.string().trim().min(1).default("free"),
   textureWidth: z.number().int().positive().default(256),
   textureHeight: z.number().int().positive().default(256),
-  boxUv: z.boolean().default(true),
+  boxUv: z.boolean().default(false),
   projectMode: z.enum(["replace_current_project", "new_project"]).default("replace_current_project"),
   createTexture: z.boolean().default(true),
   renderPreview: z.boolean().default(true),
@@ -196,7 +225,7 @@ export const GenerateAssetFromImageInputSchema = z.object({
   formatId: z.string().trim().min(1).default("free"),
   textureWidth: z.number().int().positive().default(256),
   textureHeight: z.number().int().positive().default(256),
-  boxUv: z.boolean().default(true),
+  boxUv: z.boolean().default(false),
   projectMode: z
     .enum(["replace_current_project", "new_project"])
     .default("replace_current_project"),
@@ -252,6 +281,9 @@ export type ProjectCreateInput = z.infer<typeof ProjectCreateInputSchema>;
 export type ProjectClearInput = z.infer<typeof ProjectClearInputSchema>;
 export type ProjectState = z.infer<typeof ProjectStateSchema>;
 export type BridgeHealth = z.infer<typeof BridgeHealthSchema>;
+export type CubeFaceDirection = z.infer<typeof CubeFaceDirectionSchema>;
+export type CubeFaceLayout = z.infer<typeof CubeFaceLayoutSchema>;
+export type CubeFacesLayout = z.infer<typeof CubeFacesLayoutSchema>;
 export type CubeCreateInput = z.infer<typeof CubeCreateInputSchema>;
 export type CubeResult = z.infer<typeof CubeResultSchema>;
 export type TextureCreateInput = z.infer<typeof TextureCreateInputSchema>;

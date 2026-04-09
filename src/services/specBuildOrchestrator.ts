@@ -107,6 +107,7 @@ export async function buildBlockbenchAssetFromSpec(options: {
         to: cube.to,
         origin: cube.origin,
         uvOffset: cube.uvOffset,
+        faces: cube.faces,
         boxUv: plan.boxUv,
         textureRef: texture?.uuid,
       }),

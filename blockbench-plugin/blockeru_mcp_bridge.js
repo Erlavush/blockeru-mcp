@@ -109,6 +109,35 @@
     };
   }
 
+  function applyProjectResolution(width, height, modifyUv) {
+    const project = currentProject();
+    ensure(project, "No Blockbench project is open.");
+
+    const resolvedWidth = Math.max(1, Number(width || project.texture_width || 16));
+    const resolvedHeight = Math.max(1, Number(height || project.texture_height || 16));
+
+    if (typeof setProjectResolution === "function") {
+      try {
+        setProjectResolution(resolvedWidth, resolvedHeight, modifyUv !== false);
+      } catch (_error) {
+        // Fall back to direct assignment below.
+      }
+    }
+
+    project.texture_width = resolvedWidth;
+    project.texture_height = resolvedHeight;
+
+    if (typeof updateProjectResolution === "function") {
+      try {
+        updateProjectResolution();
+      } catch (_error) {
+        // Ignore if unsupported in this Blockbench version.
+      }
+    }
+
+    refreshCanvas();
+  }
+
   function getHealth() {
     return {
       pluginId: PLUGIN_ID,
@@ -190,28 +219,7 @@
       project.box_uv = payload.boxUv;
     }
 
-    const textureWidth = Number(payload.textureWidth || 64);
-    const textureHeight = Number(payload.textureHeight || 64);
-
-    if (typeof setProjectResolution === "function") {
-      try {
-        setProjectResolution(textureWidth, textureHeight, true);
-      } catch (_error) {
-        // Fall back to direct assignment below.
-      }
-    }
-
-    project.texture_width = textureWidth;
-    project.texture_height = textureHeight;
-
-    if (typeof Canvas !== "undefined") {
-      if (typeof Canvas.updateAllUVs === "function") {
-        Canvas.updateAllUVs();
-      }
-      if (typeof Canvas.updateLayeredTextures === "function") {
-        Canvas.updateLayeredTextures();
-      }
-    }
+    applyProjectResolution(payload.textureWidth || 64, payload.textureHeight || 64, true);
 
     return getProjectState();
   }
@@ -286,24 +294,9 @@
       project.box_uv = payload.boxUv;
     }
 
-    const textureWidth = payload.textureWidth === undefined
-      ? Number(project.texture_width || 64)
-      : Number(payload.textureWidth);
-    const textureHeight = payload.textureHeight === undefined
-      ? Number(project.texture_height || 64)
-      : Number(payload.textureHeight);
-
-    if (typeof setProjectResolution === "function") {
-      try {
-        setProjectResolution(textureWidth, textureHeight, true);
-      } catch (_error) {
-        // Fall back to direct assignment below.
-      }
-    }
-
-    project.texture_width = textureWidth;
-    project.texture_height = textureHeight;
-    refreshCanvas();
+    const textureWidth = payload.textureWidth === undefined ? project.texture_width || 64 : payload.textureWidth;
+    const textureHeight = payload.textureHeight === undefined ? project.texture_height || 64 : payload.textureHeight;
+    applyProjectResolution(textureWidth, textureHeight, true);
 
     return getProjectState();
   }
@@ -354,6 +347,46 @@
       textureRef = texture.uuid || texture.id || texture.name || null;
     }
 
+    if (payload.faces && typeof cube.faces === "object") {
+      cube.box_uv = false;
+
+      if (typeof cube.setUVMode === "function") {
+        try {
+          cube.setUVMode(false);
+        } catch (_error) {
+          // Ignore if unavailable.
+        }
+      }
+
+      Object.keys(payload.faces).forEach((faceKey) => {
+        const faceData = payload.faces[faceKey];
+        const cubeFace = cube.faces[faceKey];
+
+        if (!faceData || !cubeFace) {
+          return;
+        }
+
+        cubeFace.uv = faceData.uv;
+
+        if (typeof faceData.rotation === "number") {
+          cubeFace.rotation = faceData.rotation;
+        }
+
+        if (typeof faceData.enabled === "boolean") {
+          cubeFace.enabled = faceData.enabled;
+        }
+      });
+
+      if (typeof cube.mapAutoUV === "function") {
+        cube.autouv = 0;
+      }
+    }
+
+    if (typeof cube.updateElement === "function") {
+      cube.updateElement();
+    }
+    refreshCanvas();
+
     return {
       uuid: cube.uuid,
       name: cube.name,
@@ -400,6 +433,10 @@
 
     texture.fromDataURL(payload.dataUrl).add(false, true);
     const size = await waitForTextureReady(texture, 1500);
+
+    if (size.width > 0 && size.height > 0) {
+      applyProjectResolution(size.width, size.height, false);
+    }
 
     if (payload.setAsDefault !== false && typeof texture.setAsDefaultTexture === "function") {
       texture.setAsDefaultTexture();
