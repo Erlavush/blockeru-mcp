@@ -1,24 +1,32 @@
 import type {
-  GenerateAssetFromTextInput,
-  GenerateAssetFromTextResult,
+  GenerateAssetFromImageInput,
+  GenerateAssetFromImageResult,
 } from "../contracts/schemas.js";
-import { draftAssetSpecFromPrompt } from "./promptDrafting.js";
 import type { BridgeClient } from "./bridgeClient.js";
+import {
+  buildImageGuidancePlanningPrompt,
+  draftAssetSpecFromImageGuidance,
+} from "./imageGuidancePlanning.js";
 import { buildBlockbenchAssetFromSpec } from "./specBuildOrchestrator.js";
 
-export async function generateBlockbenchAssetFromText(options: {
+export async function generateBlockbenchAssetFromImageGuidance(options: {
   bridge: BridgeClient;
-  input: GenerateAssetFromTextInput;
-}): Promise<GenerateAssetFromTextResult> {
-  const draftedSpec = draftAssetSpecFromPrompt(
+  input: GenerateAssetFromImageInput;
+}): Promise<GenerateAssetFromImageResult> {
+  const planningPrompt = buildImageGuidancePlanningPrompt(
     options.input.prompt,
-    options.input.formatId,
+    options.input.imageGuidance,
   );
+  const draftedSpec = draftAssetSpecFromImageGuidance({
+    prompt: options.input.prompt,
+    formatId: options.input.formatId,
+    imageGuidance: options.input.imageGuidance,
+  });
   const built = await buildBlockbenchAssetFromSpec({
     bridge: options.bridge,
     input: {
       spec: draftedSpec,
-      prompt: options.input.prompt,
+      prompt: planningPrompt,
       projectName: options.input.projectName,
       formatId: options.input.formatId,
       textureWidth: options.input.textureWidth,
@@ -31,8 +39,10 @@ export async function generateBlockbenchAssetFromText(options: {
   });
 
   return {
+    source: "image_guidance",
     prompt: options.input.prompt,
     projectModeUsed: built.projectModeUsed,
+    imageGuidance: options.input.imageGuidance,
     spec: built.spec,
     plan: built.plan,
     project: built.project,

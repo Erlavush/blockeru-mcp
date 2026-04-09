@@ -119,18 +119,35 @@ const MATERIAL_WORDS = ["wood", "metal", "stone", "fabric", "glass", "plastic", 
 function detectAssetType(prompt: string): string {
   const lower = prompt.toLowerCase();
 
-  for (const key of Object.keys(CATEGORY_DEFAULTS)) {
-    if (lower.includes(key)) {
-      return key;
-    }
+  if (lower.includes("sofa")) {
+    return "chair";
   }
 
-  if (lower.includes("sofa")) {
+  if (lower.includes("stool")) {
     return "chair";
   }
 
   if (lower.includes("desk")) {
     return "table";
+  }
+
+  if (
+    lower.includes("nightstand") ||
+    lower.includes("bedside") ||
+    lower.includes("drawer") ||
+    lower.includes("dresser")
+  ) {
+    return "cabinet";
+  }
+
+  if (lower.includes("bookshelf") || lower.includes("shelving")) {
+    return "shelf";
+  }
+
+  for (const key of Object.keys(CATEGORY_DEFAULTS)) {
+    if (lower.includes(key)) {
+      return key;
+    }
   }
 
   return "prop";

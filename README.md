@@ -6,9 +6,10 @@ Current status:
 
 - MCP server scaffold: implemented
 - Blockbench bridge plugin: implemented as a starter bridge
-- Live bridge primitives: health, create project, read project state, add cube, create texture, render preview
+- Live bridge primitives: health, create project, clear project, read project state, add cube, create texture, render preview
 - High-level text-to-model orchestration: implemented
-- High-level image-to-model orchestration: planned next
+- High-level spec-to-model orchestration: implemented
+- High-level image-guided planning and generation: implemented
 
 ## Repo Layout
 
@@ -73,16 +74,19 @@ codex mcp add blockeru --command node --args Z:\\blockeru-mcp\\dist\\index.js
 ## Next Steps
 
 - add groups, bones, UV tools, and export tools
-- add image-to-asset planning
+- add real image-analysis ingestion instead of structured image guidance only
 - add preview critique and repair loop
 
-## Current High-Level Tool
+## Current High-Level Tools
 
-The MCP server now exposes a high-level orchestration tool:
+The MCP server now exposes these high-level orchestration tools:
 
-- `generate_blockbench_asset_from_text`
+- `build_asset_from_spec`
+- `generate_asset_from_text`
+- `generate_asset_from_image_guidance`
+- `generate_blockbench_asset_from_text` as a backward-compatible alias
 
-This tool:
+These tools follow the same core flow:
 
 1. drafts an asset spec from the prompt
 2. replaces the current Blockbench project contents by default, or creates a fresh project if requested
@@ -93,5 +97,7 @@ This tool:
 
 Important:
 
-- `generate_blockbench_asset_from_text` defaults to `projectMode="replace_current_project"`
+- `generate_asset_from_text` defaults to `projectMode="replace_current_project"`
 - use `projectMode="new_project"` only when you explicitly want a separate Blockbench tab
+- `generate_asset_from_image_guidance` expects structured observations about the reference image
+- the MCP server still relies on Codex vision or another vision tool to turn an uploaded image into those structured observations

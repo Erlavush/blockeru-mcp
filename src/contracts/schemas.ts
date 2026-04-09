@@ -111,6 +111,20 @@ export const AssetSpecSchema = z.object({
   constraints: z.array(z.string()),
 });
 
+export const ImageGuidanceSchema = z.object({
+  subject: z.string().trim().min(1).optional(),
+  assetTypeHint: z.string().trim().min(1).optional(),
+  dominantColors: z.array(z.string().trim().min(1)).default([]),
+  materials: z.array(z.string().trim().min(1)).default([]),
+  visibleParts: z.array(z.string().trim().min(1)).default([]),
+  silhouette: z
+    .enum(["boxy", "round", "flat", "tall", "wide", "slim", "deep", "layered"])
+    .optional(),
+  symmetry: z.enum(["none", "mirror_x", "mirror_z", "radial"]).optional(),
+  proportionHint: Vector3Schema.optional(),
+  notes: z.string().trim().min(1).optional(),
+});
+
 export const MaterialSlotSchema = z.object({
   slotId: z.string(),
   label: z.string(),
@@ -142,6 +156,21 @@ export const BuildPlanSchema = z.object({
   notes: z.array(z.string()),
 });
 
+export const BuildAssetFromSpecInputSchema = z.object({
+  spec: AssetSpecSchema,
+  prompt: z.string().trim().min(1).optional(),
+  projectName: z.string().trim().min(1).max(120).optional(),
+  formatId: z.string().trim().min(1).default("free"),
+  textureWidth: z.number().int().positive().default(256),
+  textureHeight: z.number().int().positive().default(256),
+  boxUv: z.boolean().default(true),
+  projectMode: z
+    .enum(["replace_current_project", "new_project"])
+    .default("replace_current_project"),
+  createTexture: z.boolean().default(true),
+  renderPreview: z.boolean().default(true),
+});
+
 export const GenerateAssetFromTextInputSchema = z.object({
   prompt: z.string().trim().min(1),
   projectName: z.string().trim().min(1).max(120).optional(),
@@ -150,6 +179,27 @@ export const GenerateAssetFromTextInputSchema = z.object({
   textureHeight: z.number().int().positive().default(256),
   boxUv: z.boolean().default(true),
   projectMode: z.enum(["replace_current_project", "new_project"]).default("replace_current_project"),
+  createTexture: z.boolean().default(true),
+  renderPreview: z.boolean().default(true),
+});
+
+export const DraftAssetSpecFromImageInputSchema = z.object({
+  prompt: z.string().trim().min(1),
+  formatId: z.string().trim().min(1).default("free"),
+  imageGuidance: ImageGuidanceSchema,
+});
+
+export const GenerateAssetFromImageInputSchema = z.object({
+  prompt: z.string().trim().min(1),
+  imageGuidance: ImageGuidanceSchema,
+  projectName: z.string().trim().min(1).max(120).optional(),
+  formatId: z.string().trim().min(1).default("free"),
+  textureWidth: z.number().int().positive().default(256),
+  textureHeight: z.number().int().positive().default(256),
+  boxUv: z.boolean().default(true),
+  projectMode: z
+    .enum(["replace_current_project", "new_project"])
+    .default("replace_current_project"),
   createTexture: z.boolean().default(true),
   renderPreview: z.boolean().default(true),
 });
@@ -173,6 +223,31 @@ export const GenerateAssetFromTextResultSchema = z.object({
   preview: PreviewRenderResultSchema.nullable(),
 });
 
+export const BuildAssetFromSpecResultSchema = z.object({
+  source: z.literal("spec"),
+  prompt: z.string().nullable(),
+  projectModeUsed: z.enum(["replace_current_project", "new_project"]),
+  spec: AssetSpecSchema,
+  plan: BuildPlanSchema,
+  project: ProjectStateSchema,
+  texture: TextureResultSchema.nullable(),
+  createdCubes: z.array(CubeResultSchema),
+  preview: PreviewRenderResultSchema.nullable(),
+});
+
+export const GenerateAssetFromImageResultSchema = z.object({
+  source: z.literal("image_guidance"),
+  prompt: z.string(),
+  projectModeUsed: z.enum(["replace_current_project", "new_project"]),
+  imageGuidance: ImageGuidanceSchema,
+  spec: AssetSpecSchema,
+  plan: BuildPlanSchema,
+  project: ProjectStateSchema,
+  texture: TextureResultSchema.nullable(),
+  createdCubes: z.array(CubeResultSchema),
+  preview: PreviewRenderResultSchema.nullable(),
+});
+
 export type ProjectCreateInput = z.infer<typeof ProjectCreateInputSchema>;
 export type ProjectClearInput = z.infer<typeof ProjectClearInputSchema>;
 export type ProjectState = z.infer<typeof ProjectStateSchema>;
@@ -186,9 +261,15 @@ export type PreviewRenderResult = z.infer<typeof PreviewRenderResultSchema>;
 export type PromptAnalysisInput = z.infer<typeof PromptAnalysisInputSchema>;
 export type AssetPart = z.infer<typeof AssetPartSchema>;
 export type AssetSpec = z.infer<typeof AssetSpecSchema>;
+export type ImageGuidance = z.infer<typeof ImageGuidanceSchema>;
 export type MaterialSlot = z.infer<typeof MaterialSlotSchema>;
 export type PlannedCube = z.infer<typeof PlannedCubeSchema>;
 export type BuildPlan = z.infer<typeof BuildPlanSchema>;
+export type BuildAssetFromSpecInput = z.infer<typeof BuildAssetFromSpecInputSchema>;
 export type GenerateAssetFromTextInput = z.infer<typeof GenerateAssetFromTextInputSchema>;
+export type DraftAssetSpecFromImageInput = z.infer<typeof DraftAssetSpecFromImageInputSchema>;
+export type GenerateAssetFromImageInput = z.infer<typeof GenerateAssetFromImageInputSchema>;
 export type GeneratedTextureAtlas = z.infer<typeof GeneratedTextureAtlasSchema>;
 export type GenerateAssetFromTextResult = z.infer<typeof GenerateAssetFromTextResultSchema>;
+export type BuildAssetFromSpecResult = z.infer<typeof BuildAssetFromSpecResultSchema>;
+export type GenerateAssetFromImageResult = z.infer<typeof GenerateAssetFromImageResultSchema>;

@@ -1,7 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerConfig } from "../config.js";
 import {
+  BuildAssetFromSpecInputSchema,
   CubeCreateInputSchema,
+  DraftAssetSpecFromImageInputSchema,
+  GenerateAssetFromImageInputSchema,
   GenerateAssetFromTextInputSchema,
   PreviewRenderInputSchema,
   ProjectClearInputSchema,
@@ -11,7 +14,10 @@ import {
 } from "../contracts/schemas.js";
 import { SERVER_VERSION } from "../constants.js";
 import type { BridgeClient } from "../services/bridgeClient.js";
+import { draftAssetSpecFromImageGuidance } from "../services/imageGuidancePlanning.js";
 import { draftAssetSpecFromPrompt } from "../services/promptDrafting.js";
+import { buildBlockbenchAssetFromSpec } from "../services/specBuildOrchestrator.js";
+import { generateBlockbenchAssetFromImageGuidance } from "../services/imageBuildOrchestrator.js";
 import { generateBlockbenchAssetFromText } from "../services/textBuildOrchestrator.js";
 import {
   dataUrlToImagePayload,
@@ -24,6 +30,30 @@ type ToolDeps = {
   config: ServerConfig;
   bridge: BridgeClient;
 };
+
+function okResultFromGeneratedAsset<T extends { preview: { mimeType: string; width: number; height: number; dataUrl: string } | null }>(
+  result: T,
+) {
+  if (result.preview) {
+    const image = dataUrlToImagePayload(result.preview.dataUrl);
+
+    if (image) {
+      return okResultWithImage(
+        {
+          ...result,
+          preview: {
+            mimeType: result.preview.mimeType,
+            width: result.preview.width,
+            height: result.preview.height,
+          },
+        },
+        image,
+      );
+    }
+  }
+
+  return okResult(result);
+}
 
 export function registerTools(server: McpServer, deps: ToolDeps): void {
   server.registerTool(
@@ -188,11 +218,33 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   );
 
   server.registerTool(
-    "generate_blockbench_asset_from_text",
+    "build_asset_from_spec",
     {
-      title: "Generate Blockbench Asset From Text",
+      title: "Build Asset From Spec",
       description:
-        "Create a fresh Blockbench project from a text prompt, plan a cube layout, generate a starter texture atlas, build the asset, and return a preview.",
+        "Build a Blockbench asset from an explicit structured asset spec using the deterministic planner, texture generator, and bridge.",
+      inputSchema: BuildAssetFromSpecInputSchema.shape,
+    },
+    async (input) => {
+      try {
+        const result = await buildBlockbenchAssetFromSpec({
+          bridge: deps.bridge,
+          input,
+        });
+
+        return okResultFromGeneratedAsset(result);
+      } catch (error) {
+        return errorResult("Failed to build the Blockbench asset from the supplied spec.", error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "generate_asset_from_text",
+    {
+      title: "Generate Asset From Text",
+      description:
+        "Draft an asset spec from a text prompt, build it in Blockbench, and return a preview image when available.",
       inputSchema: GenerateAssetFromTextInputSchema.shape,
     },
     async (input) => {
@@ -202,31 +254,29 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
           input,
         });
 
-        if (result.preview) {
-          const image = dataUrlToImagePayload(result.preview.dataUrl);
+        return okResultFromGeneratedAsset(result);
+      } catch (error) {
+        return errorResult("Failed to generate the Blockbench asset from text.", error);
+      }
+    },
+  );
 
-          if (image) {
-            return okResultWithImage(
-              {
-                prompt: result.prompt,
-                projectModeUsed: result.projectModeUsed,
-                spec: result.spec,
-                plan: result.plan,
-                project: result.project,
-                texture: result.texture,
-                createdCubes: result.createdCubes,
-                preview: {
-                  mimeType: result.preview.mimeType,
-                  width: result.preview.width,
-                  height: result.preview.height,
-                },
-              },
-              image,
-            );
-          }
-        }
+  server.registerTool(
+    "generate_blockbench_asset_from_text",
+    {
+      title: "Generate Blockbench Asset From Text",
+      description:
+        "Backward-compatible alias for generate_asset_from_text.",
+      inputSchema: GenerateAssetFromTextInputSchema.shape,
+    },
+    async (input) => {
+      try {
+        const result = await generateBlockbenchAssetFromText({
+          bridge: deps.bridge,
+          input,
+        });
 
-        return okResult(result);
+        return okResultFromGeneratedAsset(result);
       } catch (error) {
         return errorResult("Failed to generate the Blockbench asset from text.", error);
       }
@@ -247,6 +297,49 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
         return okResult(spec);
       } catch (error) {
         return errorResult("Failed to draft an asset spec from the prompt.", error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "draft_asset_spec_from_image_guidance",
+    {
+      title: "Draft Asset Spec From Image Guidance",
+      description:
+        "Turn structured observations about an uploaded reference image into an asset spec that can be built deterministically in Blockbench.",
+      inputSchema: DraftAssetSpecFromImageInputSchema.shape,
+    },
+    async (input) => {
+      try {
+        const spec = draftAssetSpecFromImageGuidance(input);
+        return okResult(spec);
+      } catch (error) {
+        return errorResult("Failed to draft an asset spec from image guidance.", error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "generate_asset_from_image_guidance",
+    {
+      title: "Generate Asset From Image Guidance",
+      description:
+        "Use structured image observations plus a prompt to draft a spec, build the Blockbench asset, and return a preview image when available.",
+      inputSchema: GenerateAssetFromImageInputSchema.shape,
+    },
+    async (input) => {
+      try {
+        const result = await generateBlockbenchAssetFromImageGuidance({
+          bridge: deps.bridge,
+          input,
+        });
+
+        return okResultFromGeneratedAsset(result);
+      } catch (error) {
+        return errorResult(
+          "Failed to generate the Blockbench asset from image guidance.",
+          error,
+        );
       }
     },
   );

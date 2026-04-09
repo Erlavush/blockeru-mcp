@@ -13,6 +13,7 @@ type PromptDirectives = {
   roundTop: boolean;
   hasCushion: boolean;
   shelfCount: number;
+  drawerCount: number;
   coffeeTable: boolean;
   tallHeadboard: boolean;
 };
@@ -74,6 +75,45 @@ function inferShelfCount(prompt: string): number {
   return 3;
 }
 
+function inferDrawerCount(prompt: string): number {
+  if (
+    prompt.includes("single drawer") ||
+    prompt.includes("one drawer") ||
+    prompt.includes("1 drawer")
+  ) {
+    return 1;
+  }
+
+  if (
+    prompt.includes("two drawer") ||
+    prompt.includes("2 drawer") ||
+    prompt.includes("double drawer")
+  ) {
+    return 2;
+  }
+
+  if (
+    prompt.includes("three drawer") ||
+    prompt.includes("3 drawer") ||
+    prompt.includes("triple drawer")
+  ) {
+    return 3;
+  }
+
+  if (
+    prompt.includes("four drawer") ||
+    prompt.includes("4 drawer")
+  ) {
+    return 4;
+  }
+
+  if (prompt.includes("drawer")) {
+    return prompt.includes("nightstand") || prompt.includes("bedside") ? 2 : 3;
+  }
+
+  return 0;
+}
+
 function parsePromptDirectives(prompt: string): PromptDirectives {
   const lower = prompt.toLowerCase();
 
@@ -104,6 +144,7 @@ function parsePromptDirectives(prompt: string): PromptDirectives {
       lower.includes("pillow") ||
       lower.includes("upholstered"),
     shelfCount: inferShelfCount(lower),
+    drawerCount: inferDrawerCount(lower),
     coffeeTable: lower.includes("coffee table"),
     tallHeadboard: lower.includes("tall headboard"),
   };
@@ -487,43 +528,79 @@ function planCabinet(spec: AssetSpec, directives: PromptDirectives, frame: Coord
 
   cubes.push(cubeFromBounds("cabinet_body", bodyFrom, bodyTo, getMaterialSlotForPart(body, spec)));
 
-  const doorThickness = 1;
+  const frontThickness = 1;
   const frontZ = bodyTo[2];
-  const halfDoorWidth = Math.max(3, roundCoordinate(width / 2) - 1);
+  const handleSlot = getMaterialSlotForPart(handles, spec);
 
-  cubes.push(
-    cubeFromBounds(
-      "door_left",
-      [bodyFrom[0] + 1, 2, frontZ - doorThickness],
-      [bodyFrom[0] + halfDoorWidth, height - 2, frontZ],
-      getMaterialSlotForPart(doors, spec),
-    ),
-  );
-  cubes.push(
-    cubeFromBounds(
-      "door_right",
-      [bodyTo[0] - halfDoorWidth, 2, frontZ - doorThickness],
-      [bodyTo[0] - 1, height - 2, frontZ],
-      getMaterialSlotForPart(doors, spec),
-    ),
-  );
+  if (directives.drawerCount > 0) {
+    const drawerCount = clamp(directives.drawerCount, 1, 4);
+    const gap = 1;
+    const availableHeight = Math.max(6, height - 4 - gap * (drawerCount - 1));
+    const drawerHeight = Math.max(3, roundCoordinate(availableHeight / drawerCount));
+    const left = bodyFrom[0] + 1;
+    const right = bodyTo[0] - 1;
 
-  cubes.push(
-    cubeFromBounds(
-      "handle_left",
-      [roundCoordinate(frame.centerX - 1), roundCoordinate(height / 2) - 2, frontZ],
-      [roundCoordinate(frame.centerX), roundCoordinate(height / 2) + 2, frontZ + 1],
-      getMaterialSlotForPart(handles, spec),
-    ),
-  );
-  cubes.push(
-    cubeFromBounds(
-      "handle_right",
-      [roundCoordinate(frame.centerX), roundCoordinate(height / 2) - 2, frontZ],
-      [roundCoordinate(frame.centerX + 1), roundCoordinate(height / 2) + 2, frontZ + 1],
-      getMaterialSlotForPart(handles, spec),
-    ),
-  );
+    for (let index = 0; index < drawerCount; index += 1) {
+      const fromY = 2 + index * (drawerHeight + gap);
+      const toY = Math.min(height - 2, fromY + drawerHeight);
+      const drawerName = `drawer_${index + 1}`;
+      const centerY = roundCoordinate((fromY + toY) / 2);
+
+      cubes.push(
+        cubeFromBounds(
+          drawerName,
+          [left, fromY, frontZ - frontThickness],
+          [right, toY, frontZ],
+          getMaterialSlotForPart(doors, spec),
+        ),
+      );
+
+      cubes.push(
+        cubeFromBounds(
+          `${drawerName}_handle`,
+          [roundCoordinate(frame.centerX - 1), centerY - 1, frontZ],
+          [roundCoordinate(frame.centerX + 1), centerY + 1, frontZ + 1],
+          handleSlot,
+        ),
+      );
+    }
+  } else {
+    const halfDoorWidth = Math.max(3, roundCoordinate(width / 2) - 1);
+
+    cubes.push(
+      cubeFromBounds(
+        "door_left",
+        [bodyFrom[0] + 1, 2, frontZ - frontThickness],
+        [bodyFrom[0] + halfDoorWidth, height - 2, frontZ],
+        getMaterialSlotForPart(doors, spec),
+      ),
+    );
+    cubes.push(
+      cubeFromBounds(
+        "door_right",
+        [bodyTo[0] - halfDoorWidth, 2, frontZ - frontThickness],
+        [bodyTo[0] - 1, height - 2, frontZ],
+        getMaterialSlotForPart(doors, spec),
+      ),
+    );
+
+    cubes.push(
+      cubeFromBounds(
+        "handle_left",
+        [roundCoordinate(frame.centerX - 1), roundCoordinate(height / 2) - 2, frontZ],
+        [roundCoordinate(frame.centerX), roundCoordinate(height / 2) + 2, frontZ + 1],
+        handleSlot,
+      ),
+    );
+    cubes.push(
+      cubeFromBounds(
+        "handle_right",
+        [roundCoordinate(frame.centerX), roundCoordinate(height / 2) - 2, frontZ],
+        [roundCoordinate(frame.centerX + 1), roundCoordinate(height / 2) + 2, frontZ + 1],
+        handleSlot,
+      ),
+    );
+  }
 
   return cubes;
 }
