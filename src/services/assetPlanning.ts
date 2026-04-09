@@ -17,6 +17,13 @@ type PromptDirectives = {
   tallHeadboard: boolean;
 };
 
+type CoordinateFrame = {
+  centerX: number;
+  centerZ: number;
+  shiftX: number;
+  shiftZ: number;
+};
+
 const MATERIAL_OFFSETS: Record<string, [number, number]> = {
   primary: [0, 0],
   secondary: [128, 0],
@@ -28,8 +35,12 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function roundUnit(value: number): number {
+function roundSize(value: number): number {
   return Math.max(1, Math.round(value));
+}
+
+function roundCoordinate(value: number): number {
+  return Math.round(value);
 }
 
 function scaleVector(
@@ -37,9 +48,9 @@ function scaleVector(
   directives: PromptDirectives,
 ): [number, number, number] {
   return [
-    roundUnit(vector[0] * directives.scaleX),
-    roundUnit(vector[1] * directives.scaleY),
-    roundUnit(vector[2] * directives.scaleZ),
+    roundSize(vector[0] * directives.scaleX),
+    roundSize(vector[1] * directives.scaleY),
+    roundSize(vector[2] * directives.scaleZ),
   ];
 }
 
@@ -144,9 +155,9 @@ function cubeFromBounds(
     from,
     to,
     origin: [
-      roundUnit((from[0] + to[0]) / 2),
-      roundUnit((from[1] + to[1]) / 2),
-      roundUnit((from[2] + to[2]) / 2),
+      roundCoordinate((from[0] + to[0]) / 2),
+      roundCoordinate((from[1] + to[1]) / 2),
+      roundCoordinate((from[2] + to[2]) / 2),
     ],
     uvOffset: MATERIAL_OFFSETS[materialSlot] ?? MATERIAL_OFFSETS.primary,
     materialSlot,
@@ -166,8 +177,38 @@ function centeredBounds(
   const halfDepth = depth / 2;
 
   return {
-    from: [roundUnit(centerX - halfWidth), roundUnit(baseY), roundUnit(centerZ - halfDepth)],
-    to: [roundUnit(centerX + halfWidth), roundUnit(baseY + height), roundUnit(centerZ + halfDepth)],
+    from: [roundCoordinate(centerX - halfWidth), roundCoordinate(baseY), roundCoordinate(centerZ - halfDepth)],
+    to: [roundCoordinate(centerX + halfWidth), roundCoordinate(baseY + height), roundCoordinate(centerZ + halfDepth)],
+  };
+}
+
+function getCoordinateFrame(formatId: string): CoordinateFrame {
+  const lower = formatId.toLowerCase();
+  const useWorldOrigin = lower === "free" || lower === "generic" || lower === "generic_model";
+  const centerX = useWorldOrigin ? 0 : 8;
+  const centerZ = useWorldOrigin ? 0 : 8;
+
+  return {
+    centerX,
+    centerZ,
+    shiftX: centerX - 8,
+    shiftZ: centerZ - 8,
+  };
+}
+
+function translatePoint(
+  point: [number, number, number],
+  frame: CoordinateFrame,
+): [number, number, number] {
+  return [point[0] + frame.shiftX, point[1], point[2] + frame.shiftZ];
+}
+
+function translateCube(cube: PlannedCube, frame: CoordinateFrame): PlannedCube {
+  return {
+    ...cube,
+    from: translatePoint(cube.from, frame),
+    to: translatePoint(cube.to, frame),
+    origin: translatePoint(cube.origin, frame),
   };
 }
 
@@ -197,18 +238,18 @@ function getMaterialSlotForPart(part: AssetPart | undefined, spec: AssetSpec): s
   return "primary";
 }
 
-function planChair(spec: AssetSpec, directives: PromptDirectives): PlannedCube[] {
+function planChair(spec: AssetSpec, directives: PromptDirectives, frame: CoordinateFrame): PlannedCube[] {
   const seat = findPart(spec, "seat");
   const backrest = findPart(spec, "backrest");
   const legs = findPart(spec, "legs");
-  const width = roundUnit(spec.estimatedSize[0]);
-  const height = roundUnit(spec.estimatedSize[1]);
-  const depth = roundUnit(spec.estimatedSize[2]);
-  const seatHeight = roundUnit((seat?.size[1] ?? 2) * Math.max(0.9, directives.scaleY));
-  const backrestHeight = roundUnit((backrest?.size[1] ?? 10) * Math.max(0.9, directives.scaleY));
+  const width = roundSize(spec.estimatedSize[0]);
+  const height = roundSize(spec.estimatedSize[1]);
+  const depth = roundSize(spec.estimatedSize[2]);
+  const seatHeight = roundSize((seat?.size[1] ?? 2) * Math.max(0.9, directives.scaleY));
+  const backrestHeight = roundSize((backrest?.size[1] ?? 10) * Math.max(0.9, directives.scaleY));
   const legHeight = Math.max(4, height - seatHeight - backrestHeight);
-  const centerX = 8;
-  const centerZ = 8;
+  const centerX = frame.centerX;
+  const centerZ = frame.centerZ;
   const cubes: PlannedCube[] = [];
   const seatBounds = centeredBounds(width - 2, seatHeight, depth - 2, centerX, legHeight, centerZ);
 
@@ -222,26 +263,26 @@ function planChair(spec: AssetSpec, directives: PromptDirectives): PlannedCube[]
     ),
   );
 
-  const backThickness = clamp(roundUnit((backrest?.size[2] ?? 2) * directives.scaleZ), 2, 4);
+  const backThickness = clamp(roundSize((backrest?.size[2] ?? 2) * directives.scaleZ), 2, 4);
   cubes.push(
     cubeFromBounds(
       "backrest",
-      [seatBounds.from[0], seatBounds.to[1] - 1, roundUnit(centerZ + depth / 2 - backThickness)],
-      [seatBounds.to[0], height, roundUnit(centerZ + depth / 2)],
+      [seatBounds.from[0], seatBounds.to[1] - 1, roundCoordinate(centerZ + depth / 2 - backThickness)],
+      [seatBounds.to[0], height, roundCoordinate(centerZ + depth / 2)],
       getMaterialSlotForPart(backrest, spec),
       "Rear panel aligned to the back edge.",
     ),
   );
 
-  const legThickness = clamp(roundUnit((legs?.size[0] ?? 2) * directives.scaleX), 1, 3);
-  const halfWidth = roundUnit(width / 2) - legThickness;
-  const halfDepth = roundUnit(depth / 2) - legThickness;
+  const legThickness = clamp(roundSize((legs?.size[0] ?? 2) * directives.scaleX), 1, 3);
+  const halfWidth = roundCoordinate(width / 2) - legThickness;
+  const halfDepth = roundCoordinate(depth / 2) - legThickness;
   const legSlot = getMaterialSlotForPart(legs, spec);
   const legPositions: Array<[number, number]> = [
-    [8 - halfWidth, 8 - halfDepth],
-    [8 + halfWidth - legThickness, 8 - halfDepth],
-    [8 - halfWidth, 8 + halfDepth - legThickness],
-    [8 + halfWidth - legThickness, 8 + halfDepth - legThickness],
+    [centerX - halfWidth, centerZ - halfDepth],
+    [centerX + halfWidth - legThickness, centerZ - halfDepth],
+    [centerX - halfWidth, centerZ + halfDepth - legThickness],
+    [centerX + halfWidth - legThickness, centerZ + halfDepth - legThickness],
   ];
 
   legPositions.forEach(([x, z], index) => {
@@ -271,14 +312,14 @@ function planChair(spec: AssetSpec, directives: PromptDirectives): PlannedCube[]
   return cubes;
 }
 
-function planTable(spec: AssetSpec, directives: PromptDirectives): PlannedCube[] {
+function planTable(spec: AssetSpec, directives: PromptDirectives, frame: CoordinateFrame): PlannedCube[] {
   const top = findPart(spec, "top");
   const legs = findPart(spec, "legs");
-  const width = roundUnit(spec.estimatedSize[0]);
-  const depth = roundUnit(spec.estimatedSize[2]);
+  const width = roundSize(spec.estimatedSize[0]);
+  const depth = roundSize(spec.estimatedSize[2]);
   const targetHeight = directives.coffeeTable
-    ? roundUnit(spec.estimatedSize[1] * 0.7)
-    : roundUnit(spec.estimatedSize[1]);
+    ? roundSize(spec.estimatedSize[1] * 0.7)
+    : roundSize(spec.estimatedSize[1]);
   const topThickness = clamp(top?.size[1] ?? 2, 2, 4);
   const legHeight = Math.max(5, targetHeight - topThickness);
   const cubes: PlannedCube[] = [];
@@ -288,35 +329,49 @@ function planTable(spec: AssetSpec, directives: PromptDirectives): PlannedCube[]
     cubes.push(
       cubeFromBounds(
         "top_core",
-        [2, legHeight, 2],
-        [14, legHeight + topThickness, 14],
+        [frame.centerX - 6, legHeight, frame.centerZ - 6],
+        [frame.centerX + 6, legHeight + topThickness, frame.centerZ + 6],
         topSlot,
         "Core slab for the round tabletop silhouette.",
       ),
     );
-    cubes.push(cubeFromBounds("top_x", [0, legHeight, 4], [16, legHeight + topThickness, 12], topSlot));
-    cubes.push(cubeFromBounds("top_z", [4, legHeight, 0], [12, legHeight + topThickness, 16], topSlot));
+    cubes.push(
+      cubeFromBounds(
+        "top_x",
+        [frame.centerX - 8, legHeight, frame.centerZ - 4],
+        [frame.centerX + 8, legHeight + topThickness, frame.centerZ + 4],
+        topSlot,
+      ),
+    );
+    cubes.push(
+      cubeFromBounds(
+        "top_z",
+        [frame.centerX - 4, legHeight, frame.centerZ - 8],
+        [frame.centerX + 4, legHeight + topThickness, frame.centerZ + 8],
+        topSlot,
+      ),
+    );
   } else {
     cubes.push(
       cubeFromBounds(
         "table_top",
-        [roundUnit(8 - width / 2), legHeight, roundUnit(8 - depth / 2)],
-        [roundUnit(8 + width / 2), legHeight + topThickness, roundUnit(8 + depth / 2)],
+        [roundCoordinate(frame.centerX - width / 2), legHeight, roundCoordinate(frame.centerZ - depth / 2)],
+        [roundCoordinate(frame.centerX + width / 2), legHeight + topThickness, roundCoordinate(frame.centerZ + depth / 2)],
         topSlot,
         "Primary tabletop slab.",
       ),
     );
   }
 
-  const legThickness = clamp(roundUnit((legs?.size[0] ?? 2) * directives.scaleX), 1, 3);
-  const halfWidth = roundUnit(width / 2) - legThickness;
-  const halfDepth = roundUnit(depth / 2) - legThickness;
+  const legThickness = clamp(roundSize((legs?.size[0] ?? 2) * directives.scaleX), 1, 3);
+  const halfWidth = roundCoordinate(width / 2) - legThickness;
+  const halfDepth = roundCoordinate(depth / 2) - legThickness;
   const legSlot = getMaterialSlotForPart(legs, spec);
   const legPositions: Array<[number, number]> = [
-    [8 - halfWidth, 8 - halfDepth],
-    [8 + halfWidth - legThickness, 8 - halfDepth],
-    [8 - halfWidth, 8 + halfDepth - legThickness],
-    [8 + halfWidth - legThickness, 8 + halfDepth - legThickness],
+    [frame.centerX - halfWidth, frame.centerZ - halfDepth],
+    [frame.centerX + halfWidth - legThickness, frame.centerZ - halfDepth],
+    [frame.centerX - halfWidth, frame.centerZ + halfDepth - legThickness],
+    [frame.centerX + halfWidth - legThickness, frame.centerZ + halfDepth - legThickness],
   ];
 
   legPositions.forEach(([x, z], index) => {
@@ -326,37 +381,47 @@ function planTable(spec: AssetSpec, directives: PromptDirectives): PlannedCube[]
   return cubes;
 }
 
-function planLamp(spec: AssetSpec, directives: PromptDirectives): PlannedCube[] {
+function planLamp(spec: AssetSpec, directives: PromptDirectives, frame: CoordinateFrame): PlannedCube[] {
   const base = findPart(spec, "base");
   const stem = findPart(spec, "stem");
   const shade = findPart(spec, "shade");
-  const totalHeight = roundUnit(spec.estimatedSize[1] * directives.scaleY);
+  const totalHeight = roundSize(spec.estimatedSize[1] * directives.scaleY);
   const baseHeight = clamp(base?.size[1] ?? 2, 2, 4);
-  const stemHeight = clamp(roundUnit((stem?.size[1] ?? 12) * directives.scaleY), 8, 16);
+  const stemHeight = clamp(roundSize((stem?.size[1] ?? 12) * directives.scaleY), 8, 16);
   const shadeHeight = Math.max(4, totalHeight - baseHeight - stemHeight);
   const cubes: PlannedCube[] = [];
 
   cubes.push(
-    cubeFromBounds("lamp_base", [5, 0, 5], [11, baseHeight, 11], getMaterialSlotForPart(base, spec)),
+    cubeFromBounds(
+      "lamp_base",
+      [frame.centerX - 3, 0, frame.centerZ - 3],
+      [frame.centerX + 3, baseHeight, frame.centerZ + 3],
+      getMaterialSlotForPart(base, spec),
+    ),
   );
   cubes.push(
-    cubeFromBounds("lamp_stem", [7, baseHeight, 7], [9, baseHeight + stemHeight, 9], getMaterialSlotForPart(stem, spec)),
+    cubeFromBounds(
+      "lamp_stem",
+      [frame.centerX - 1, baseHeight, frame.centerZ - 1],
+      [frame.centerX + 1, baseHeight + stemHeight, frame.centerZ + 1],
+      getMaterialSlotForPart(stem, spec),
+    ),
   );
 
   if (directives.roundTop) {
     cubes.push(
       cubeFromBounds(
         "lamp_shade_mid",
-        [3, baseHeight + stemHeight, 3],
-        [13, baseHeight + stemHeight + shadeHeight, 13],
+        [frame.centerX - 5, baseHeight + stemHeight, frame.centerZ - 5],
+        [frame.centerX + 5, baseHeight + stemHeight + shadeHeight, frame.centerZ + 5],
         getMaterialSlotForPart(shade, spec),
       ),
     );
     cubes.push(
       cubeFromBounds(
         "lamp_shade_upper",
-        [4, baseHeight + stemHeight + 1, 4],
-        [12, baseHeight + stemHeight + shadeHeight - 1, 12],
+        [frame.centerX - 4, baseHeight + stemHeight + 1, frame.centerZ - 4],
+        [frame.centerX + 4, baseHeight + stemHeight + shadeHeight - 1, frame.centerZ + 4],
         getMaterialSlotForPart(shade, spec),
       ),
     );
@@ -364,8 +429,8 @@ function planLamp(spec: AssetSpec, directives: PromptDirectives): PlannedCube[] 
     cubes.push(
       cubeFromBounds(
         "lamp_shade",
-        [3, baseHeight + stemHeight, 3],
-        [13, baseHeight + stemHeight + shadeHeight, 13],
+        [frame.centerX - 5, baseHeight + stemHeight, frame.centerZ - 5],
+        [frame.centerX + 5, baseHeight + stemHeight + shadeHeight, frame.centerZ + 5],
         getMaterialSlotForPart(shade, spec),
       ),
     );
@@ -374,33 +439,33 @@ function planLamp(spec: AssetSpec, directives: PromptDirectives): PlannedCube[] 
   return cubes;
 }
 
-function planShelf(spec: AssetSpec, directives: PromptDirectives): PlannedCube[] {
+function planShelf(spec: AssetSpec, directives: PromptDirectives, frame: CoordinateFrame): PlannedCube[] {
   const sidePanels = findPart(spec, "side_panels");
   const shelves = findPart(spec, "shelves");
-  const width = roundUnit(spec.estimatedSize[0]);
-  const height = roundUnit(spec.estimatedSize[1]);
-  const depth = roundUnit(spec.estimatedSize[2]);
+  const width = roundSize(spec.estimatedSize[0]);
+  const height = roundSize(spec.estimatedSize[1]);
+  const depth = roundSize(spec.estimatedSize[2]);
   const sideThickness = clamp(sidePanels?.size[0] ?? 2, 1, 3);
   const shelfThickness = clamp(shelves?.size[1] ?? 2, 1, 3);
   const cubes: PlannedCube[] = [];
   const sideSlot = getMaterialSlotForPart(sidePanels, spec);
   const shelfSlot = getMaterialSlotForPart(shelves, spec);
 
-  cubes.push(cubeFromBounds("side_left", [roundUnit(8 - width / 2), 0, roundUnit(8 - depth / 2)], [roundUnit(8 - width / 2) + sideThickness, height, roundUnit(8 + depth / 2)], sideSlot));
-  cubes.push(cubeFromBounds("side_right", [roundUnit(8 + width / 2) - sideThickness, 0, roundUnit(8 - depth / 2)], [roundUnit(8 + width / 2), height, roundUnit(8 + depth / 2)], sideSlot));
+  cubes.push(cubeFromBounds("side_left", [roundCoordinate(frame.centerX - width / 2), 0, roundCoordinate(frame.centerZ - depth / 2)], [roundCoordinate(frame.centerX - width / 2) + sideThickness, height, roundCoordinate(frame.centerZ + depth / 2)], sideSlot));
+  cubes.push(cubeFromBounds("side_right", [roundCoordinate(frame.centerX + width / 2) - sideThickness, 0, roundCoordinate(frame.centerZ - depth / 2)], [roundCoordinate(frame.centerX + width / 2), height, roundCoordinate(frame.centerZ + depth / 2)], sideSlot));
 
-  const usableWidthFrom = roundUnit(8 - width / 2) + sideThickness;
-  const usableWidthTo = roundUnit(8 + width / 2) - sideThickness;
+  const usableWidthFrom = roundCoordinate(frame.centerX - width / 2) + sideThickness;
+  const usableWidthTo = roundCoordinate(frame.centerX + width / 2) - sideThickness;
   const shelfCount = clamp(directives.shelfCount, 2, 4);
-  const verticalGap = roundUnit((height - shelfThickness) / shelfCount);
+  const verticalGap = roundCoordinate((height - shelfThickness) / shelfCount);
 
   for (let index = 0; index < shelfCount; index += 1) {
     const baseY = index * verticalGap;
     cubes.push(
       cubeFromBounds(
         `shelf_${index + 1}`,
-        [usableWidthFrom, baseY, roundUnit(8 - depth / 2)],
-        [usableWidthTo, baseY + shelfThickness, roundUnit(8 + depth / 2)],
+        [usableWidthFrom, baseY, roundCoordinate(frame.centerZ - depth / 2)],
+        [usableWidthTo, baseY + shelfThickness, roundCoordinate(frame.centerZ + depth / 2)],
         shelfSlot,
       ),
     );
@@ -409,22 +474,22 @@ function planShelf(spec: AssetSpec, directives: PromptDirectives): PlannedCube[]
   return cubes;
 }
 
-function planCabinet(spec: AssetSpec, directives: PromptDirectives): PlannedCube[] {
+function planCabinet(spec: AssetSpec, directives: PromptDirectives, frame: CoordinateFrame): PlannedCube[] {
   const body = findPart(spec, "body");
   const doors = findPart(spec, "doors");
   const handles = findPart(spec, "handles");
-  const width = roundUnit(spec.estimatedSize[0]);
-  const height = roundUnit(spec.estimatedSize[1]);
-  const depth = roundUnit(spec.estimatedSize[2]);
+  const width = roundSize(spec.estimatedSize[0]);
+  const height = roundSize(spec.estimatedSize[1]);
+  const depth = roundSize(spec.estimatedSize[2]);
   const cubes: PlannedCube[] = [];
-  const bodyFrom = [roundUnit(8 - width / 2), 0, roundUnit(8 - depth / 2)] as [number, number, number];
-  const bodyTo = [roundUnit(8 + width / 2), height, roundUnit(8 + depth / 2)] as [number, number, number];
+  const bodyFrom = [roundCoordinate(frame.centerX - width / 2), 0, roundCoordinate(frame.centerZ - depth / 2)] as [number, number, number];
+  const bodyTo = [roundCoordinate(frame.centerX + width / 2), height, roundCoordinate(frame.centerZ + depth / 2)] as [number, number, number];
 
   cubes.push(cubeFromBounds("cabinet_body", bodyFrom, bodyTo, getMaterialSlotForPart(body, spec)));
 
   const doorThickness = 1;
   const frontZ = bodyTo[2];
-  const halfDoorWidth = Math.max(3, roundUnit(width / 2) - 1);
+  const halfDoorWidth = Math.max(3, roundCoordinate(width / 2) - 1);
 
   cubes.push(
     cubeFromBounds(
@@ -446,16 +511,16 @@ function planCabinet(spec: AssetSpec, directives: PromptDirectives): PlannedCube
   cubes.push(
     cubeFromBounds(
       "handle_left",
-      [roundUnit(8 - 1), roundUnit(height / 2) - 2, frontZ],
-      [roundUnit(8), roundUnit(height / 2) + 2, frontZ + 1],
+      [roundCoordinate(frame.centerX - 1), roundCoordinate(height / 2) - 2, frontZ],
+      [roundCoordinate(frame.centerX), roundCoordinate(height / 2) + 2, frontZ + 1],
       getMaterialSlotForPart(handles, spec),
     ),
   );
   cubes.push(
     cubeFromBounds(
       "handle_right",
-      [roundUnit(8), roundUnit(height / 2) - 2, frontZ],
-      [roundUnit(8 + 1), roundUnit(height / 2) + 2, frontZ + 1],
+      [roundCoordinate(frame.centerX), roundCoordinate(height / 2) - 2, frontZ],
+      [roundCoordinate(frame.centerX + 1), roundCoordinate(height / 2) + 2, frontZ + 1],
       getMaterialSlotForPart(handles, spec),
     ),
   );
@@ -463,14 +528,14 @@ function planCabinet(spec: AssetSpec, directives: PromptDirectives): PlannedCube
   return cubes;
 }
 
-function planBed(spec: AssetSpec, directives: PromptDirectives): PlannedCube[] {
-  const frame = findPart(spec, "frame");
+function planBed(spec: AssetSpec, directives: PromptDirectives, frame: CoordinateFrame): PlannedCube[] {
+  const bedFrame = findPart(spec, "frame");
   const mattress = findPart(spec, "mattress");
   const headboard = findPart(spec, "headboard");
-  const width = roundUnit(spec.estimatedSize[0]);
-  const height = roundUnit(spec.estimatedSize[1]);
-  const depth = roundUnit(spec.estimatedSize[2]);
-  const frameHeight = clamp(frame?.size[1] ?? 6, 4, 8);
+  const width = roundSize(spec.estimatedSize[0]);
+  const height = roundSize(spec.estimatedSize[1]);
+  const depth = roundSize(spec.estimatedSize[2]);
+  const frameHeight = clamp(bedFrame?.size[1] ?? 6, 4, 8);
   const mattressHeight = clamp(mattress?.size[1] ?? 4, 3, 6);
   const headboardHeight = directives.tallHeadboard ? clamp(height, 10, 18) : clamp(headboard?.size[1] ?? 8, 6, 12);
   const cubes: PlannedCube[] = [];
@@ -478,24 +543,24 @@ function planBed(spec: AssetSpec, directives: PromptDirectives): PlannedCube[] {
   cubes.push(
     cubeFromBounds(
       "bed_frame",
-      [roundUnit(8 - width / 2), 0, roundUnit(8 - depth / 2)],
-      [roundUnit(8 + width / 2), frameHeight, roundUnit(8 + depth / 2)],
-      getMaterialSlotForPart(frame, spec),
+      [roundCoordinate(frame.centerX - width / 2), 0, roundCoordinate(frame.centerZ - depth / 2)],
+      [roundCoordinate(frame.centerX + width / 2), frameHeight, roundCoordinate(frame.centerZ + depth / 2)],
+      getMaterialSlotForPart(bedFrame, spec),
     ),
   );
   cubes.push(
     cubeFromBounds(
       "mattress",
-      [roundUnit(8 - width / 2) + 1, frameHeight, roundUnit(8 - depth / 2) + 1],
-      [roundUnit(8 + width / 2) - 1, frameHeight + mattressHeight, roundUnit(8 + depth / 2) - 1],
+      [roundCoordinate(frame.centerX - width / 2) + 1, frameHeight, roundCoordinate(frame.centerZ - depth / 2) + 1],
+      [roundCoordinate(frame.centerX + width / 2) - 1, frameHeight + mattressHeight, roundCoordinate(frame.centerZ + depth / 2) - 1],
       getMaterialSlotForPart(mattress, spec),
     ),
   );
   cubes.push(
     cubeFromBounds(
       "headboard",
-      [roundUnit(8 - width / 2), frameHeight, roundUnit(8 + depth / 2) - 2],
-      [roundUnit(8 + width / 2), frameHeight + headboardHeight, roundUnit(8 + depth / 2)],
+      [roundCoordinate(frame.centerX - width / 2), frameHeight, roundCoordinate(frame.centerZ + depth / 2) - 2],
+      [roundCoordinate(frame.centerX + width / 2), frameHeight + headboardHeight, roundCoordinate(frame.centerZ + depth / 2)],
       getMaterialSlotForPart(headboard, spec),
     ),
   );
@@ -504,23 +569,23 @@ function planBed(spec: AssetSpec, directives: PromptDirectives): PlannedCube[] {
 }
 
 function planGeneric(spec: AssetSpec): PlannedCube[] {
-  const width = roundUnit(spec.estimatedSize[0]);
-  const height = roundUnit(spec.estimatedSize[1]);
-  const depth = roundUnit(spec.estimatedSize[2]);
+  const width = roundSize(spec.estimatedSize[0]);
+  const height = roundSize(spec.estimatedSize[1]);
+  const depth = roundSize(spec.estimatedSize[2]);
   const part = spec.parts[0];
 
   return [
     cubeFromBounds(
       part?.name ?? "main_body",
-      [roundUnit(8 - width / 2), 0, roundUnit(8 - depth / 2)],
-      [roundUnit(8 + width / 2), height, roundUnit(8 + depth / 2)],
+      [roundCoordinate(8 - width / 2), 0, roundCoordinate(8 - depth / 2)],
+      [roundCoordinate(8 + width / 2), height, roundCoordinate(8 + depth / 2)],
       getMaterialSlotForPart(part, spec),
       "Fallback silhouette cube.",
     ),
   ];
 }
 
-function selectPlanner(spec: AssetSpec): (spec: AssetSpec, directives: PromptDirectives) => PlannedCube[] {
+function selectPlanner(spec: AssetSpec): (spec: AssetSpec, directives: PromptDirectives, frame: CoordinateFrame) => PlannedCube[] {
   switch (spec.assetType) {
     case "chair":
       return planChair;
@@ -535,7 +600,8 @@ function selectPlanner(spec: AssetSpec): (spec: AssetSpec, directives: PromptDir
     case "bed":
       return planBed;
     default:
-      return (incomingSpec) => planGeneric(incomingSpec);
+      return (incomingSpec, _directives, frame) =>
+        planGeneric(incomingSpec).map((cube) => translateCube(cube, frame));
   }
 }
 
@@ -554,8 +620,9 @@ export function planBuildFromAssetSpec(options: {
     ...options.spec,
     estimatedSize: scaledSize,
   };
+  const frame = getCoordinateFrame(options.formatId);
   const planner = selectPlanner(spec);
-  const cubes = planner(spec, directives);
+  const cubes = planner(spec, directives, frame);
   const materialSlots = pickMaterialSlots(spec);
   const projectName = options.projectName ?? sanitizeProjectName(options.prompt, spec.assetType);
 
@@ -571,7 +638,7 @@ export function planBuildFromAssetSpec(options: {
     cubes,
     notes: [
       "Generated by the deterministic text planner.",
-      "Coordinates are centered around the Blockbench scene origin at x=8, z=8.",
+      `Coordinates are centered around the Blockbench scene origin for format "${options.formatId}".`,
       "Material slots are mapped onto a procedural 2x2 atlas.",
     ],
   };
