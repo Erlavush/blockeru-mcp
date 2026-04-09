@@ -15,27 +15,6 @@
     }
   }
 
-  function sendJson(response, statusCode, payload) {
-    response.writeHead(statusCode, {
-      "Content-Type": "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    });
-    response.end(JSON.stringify(payload));
-  }
-
-  function sendOk(response, data) {
-    sendJson(response, 200, { ok: true, data: data });
-  }
-
-  function sendError(response, statusCode, error) {
-    sendJson(response, statusCode, {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-
   function reportStatus(message, duration) {
     console.log(`[${PLUGIN_TITLE}] ${message}`);
     if (typeof Blockbench !== "undefined" && typeof Blockbench.showQuickMessage === "function") {
@@ -49,25 +28,49 @@
     reportStatus(`${PLUGIN_TITLE} failed: ${startupError}`, 6000);
   }
 
-  function readRequestBody(request) {
-    return new Promise((resolve, reject) => {
-      let body = "";
-      request.on("data", (chunk) => {
-        body += chunk;
-      });
-      request.on("end", () => {
-        if (!body) {
-          resolve({});
-          return;
-        }
+  function getStatusText(statusCode) {
+    const texts = {
+      200: "OK",
+      204: "No Content",
+      400: "Bad Request",
+      404: "Not Found",
+      405: "Method Not Allowed",
+      500: "Internal Server Error",
+    };
 
-        try {
-          resolve(JSON.parse(body));
-        } catch (_error) {
-          reject(new Error("Invalid JSON request body."));
-        }
-      });
-      request.on("error", reject);
+    return texts[statusCode] || "Unknown";
+  }
+
+  function sendSocketResponse(socket, statusCode, payload) {
+    if (!socket || socket.destroyed || !socket.writable) {
+      return;
+    }
+
+    const body = JSON.stringify(payload);
+    const headers = [
+      `HTTP/1.1 ${statusCode} ${getStatusText(statusCode)}`,
+      "Content-Type: application/json; charset=utf-8",
+      `Content-Length: ${Buffer.byteLength(body)}`,
+      "Access-Control-Allow-Origin: *",
+      "Access-Control-Allow-Methods: GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers: Content-Type",
+      "Connection: close",
+      `Date: ${new Date().toUTCString()}`,
+      "",
+      body,
+    ];
+
+    socket.end(headers.join("\r\n"));
+  }
+
+  function sendSocketOk(socket, data) {
+    sendSocketResponse(socket, 200, { ok: true, data: data });
+  }
+
+  function sendSocketError(socket, statusCode, error) {
+    sendSocketResponse(socket, statusCode, {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 
@@ -151,8 +154,8 @@
     return null;
   }
 
-  function resolveHttpModule() {
-    const candidates = ["node:http", "http"];
+  function resolveNetModule() {
+    const candidates = ["node:net", "net"];
 
     for (const candidate of candidates) {
       const mod = requireBridgeModule(candidate);
@@ -302,53 +305,128 @@
     };
   }
 
-  async function handleRoute(request, response) {
-    const url = new URL(request.url || "/", `http://${HOST}:${PORT}`);
-    const path = url.pathname;
+  async function handleParsedRequest(method, path, bodyText, socket) {
+    const url = new URL(path || "/", `http://${HOST}:${PORT}`);
+    const route = url.pathname;
+    const body =
+      method === "POST" && bodyText
+        ? (() => {
+            try {
+              return JSON.parse(bodyText);
+            } catch (_error) {
+              throw new Error("Invalid JSON request body.");
+            }
+          })()
+        : {};
 
-    if (request.method === "OPTIONS") {
-      response.writeHead(204, {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
+    if (method === "OPTIONS") {
+      sendSocketResponse(socket, 204, { ok: true });
+      return;
+    }
+
+    if (route === `${BASE_PATH}/health` && method === "GET") {
+      sendSocketOk(socket, getHealth());
+      return;
+    }
+
+    if (route === `${BASE_PATH}/project/state` && method === "GET") {
+      sendSocketOk(socket, getProjectState());
+      return;
+    }
+
+    if (route === `${BASE_PATH}/project/create` && method === "POST") {
+      sendSocketOk(socket, createProject(body));
+      return;
+    }
+
+    if (route === `${BASE_PATH}/cube/add` && method === "POST") {
+      sendSocketOk(socket, addCube(body));
+      return;
+    }
+
+    if (route === `${BASE_PATH}/texture/create` && method === "POST") {
+      sendSocketOk(socket, createTexture(body));
+      return;
+    }
+
+    if (route === `${BASE_PATH}/preview/render` && method === "POST") {
+      sendSocketOk(socket, renderPreview());
+      return;
+    }
+
+    sendSocketError(socket, 404, `Unknown bridge route: ${method} ${route}`);
+  }
+
+  function createBridgeServer(net) {
+    return net.createServer((socket) => {
+      let buffer = Buffer.alloc(0);
+      let handled = false;
+
+      socket.on("data", (chunk) => {
+        if (handled) {
+          return;
+        }
+
+        buffer = Buffer.concat([buffer, chunk]);
+        processBuffer().catch((error) => {
+          reportError(error);
+          sendSocketError(socket, 500, error);
+        });
       });
-      response.end();
-      return;
-    }
 
-    if (path === `${BASE_PATH}/health` && request.method === "GET") {
-      sendOk(response, getHealth());
-      return;
-    }
+      socket.on("error", (error) => {
+        console.error(`[${PLUGIN_TITLE}] Socket error`, error);
+      });
 
-    if (path === `${BASE_PATH}/project/state` && request.method === "GET") {
-      sendOk(response, getProjectState());
-      return;
-    }
+      async function processBuffer() {
+        if (handled) {
+          return;
+        }
 
-    const body = request.method === "POST" ? await readRequestBody(request) : {};
+        const headerEnd = buffer.indexOf("\r\n\r\n");
+        if (headerEnd === -1) {
+          return;
+        }
 
-    if (path === `${BASE_PATH}/project/create` && request.method === "POST") {
-      sendOk(response, createProject(body));
-      return;
-    }
+        const headerText = buffer.subarray(0, headerEnd).toString("utf8");
+        const lines = headerText.split("\r\n");
+        const requestLine = lines[0] || "";
+        const parts = requestLine.split(" ");
 
-    if (path === `${BASE_PATH}/cube/add` && request.method === "POST") {
-      sendOk(response, addCube(body));
-      return;
-    }
+        if (parts.length < 2) {
+          handled = true;
+          sendSocketError(socket, 400, "Malformed HTTP request line.");
+          return;
+        }
 
-    if (path === `${BASE_PATH}/texture/create` && request.method === "POST") {
-      sendOk(response, createTexture(body));
-      return;
-    }
+        const method = parts[0];
+        const path = parts[1];
+        const headers = {};
 
-    if (path === `${BASE_PATH}/preview/render` && request.method === "POST") {
-      sendOk(response, renderPreview());
-      return;
-    }
+        for (let index = 1; index < lines.length; index += 1) {
+          const separator = lines[index].indexOf(":");
+          if (separator === -1) {
+            continue;
+          }
 
-    sendError(response, 404, `Unknown bridge route: ${request.method} ${path}`);
+          const key = lines[index].slice(0, separator).trim().toLowerCase();
+          const value = lines[index].slice(separator + 1).trim();
+          headers[key] = value;
+        }
+
+        const bodyStart = headerEnd + 4;
+        const contentLength = Number(headers["content-length"] || "0");
+        const requestEnd = bodyStart + contentLength;
+
+        if (buffer.length < requestEnd) {
+          return;
+        }
+
+        handled = true;
+        const bodyText = buffer.subarray(bodyStart, requestEnd).toString("utf8");
+        await handleParsedRequest(method, path, bodyText, socket);
+      }
+    });
   }
 
   BBPlugin.register(PLUGIN_ID, {
@@ -363,15 +441,10 @@
       startupError = null;
 
       try {
-        const http = resolveHttpModule();
-        ensure(http, "Failed to load the Node HTTP module inside Blockbench.");
+        const net = resolveNetModule();
+        ensure(net, "Failed to load the Node net module inside Blockbench.");
 
-        httpServer = http.createServer((request, response) => {
-          Promise.resolve(handleRoute(request, response)).catch((error) => {
-            console.error(`[${PLUGIN_TITLE}]`, error);
-            sendError(response, 500, error);
-          });
-        });
+        httpServer = createBridgeServer(net);
 
         httpServer.on("error", (error) => {
           reportError(error);
