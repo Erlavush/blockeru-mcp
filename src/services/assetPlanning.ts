@@ -1024,6 +1024,8 @@ function planCabinet(spec: AssetSpec, directives: PromptDirectives, frame: Coord
   const height = roundSize(spec.estimatedSize[1]);
   const depth = roundSize(spec.estimatedSize[2]);
   const cubes: PlannedCube[] = [];
+  const bodySlot = getMaterialSlotForPart(body, spec);
+  const frontSlot = getMaterialSlotForPart(doors, spec);
   const bodyFrom = [
     roundCoordinate(frame.centerX - width / 2),
     0,
@@ -1034,78 +1036,144 @@ function planCabinet(spec: AssetSpec, directives: PromptDirectives, frame: Coord
     height,
     roundCoordinate(frame.centerZ + depth / 2),
   ] as [number, number, number];
-
-  cubes.push(cubeFromBounds("cabinet_body", bodyFrom, bodyTo, getMaterialSlotForPart(body, spec)));
-
-  const frontThickness = 1;
-  const frontZ = bodyTo[2];
+  const shellThickness = clamp(Math.max(1, roundCoordinate(Math.min(width, depth) / 8)), 1, 2);
+  const frontReveal = 1;
+  const frontThickness = 2;
+  const handleDepth = 2;
+  const carcassFrontZ = bodyTo[2] - frontReveal;
+  const frontStartZ = carcassFrontZ;
+  const frontEndZ = carcassFrontZ + frontThickness;
+  const innerLeft = bodyFrom[0] + shellThickness;
+  const innerRight = bodyTo[0] - shellThickness;
+  const innerBottom = shellThickness;
+  const innerTop = height - shellThickness;
+  const innerBackZ = bodyFrom[2] + shellThickness;
   const handleSlot = getMaterialSlotForPart(handles, spec);
+
+  cubes.push(
+    cubeFromBounds(
+      "cabinet_back",
+      bodyFrom,
+      [bodyTo[0], height, innerBackZ],
+      bodySlot,
+      "Back panel of the cabinet carcass.",
+    ),
+  );
+  cubes.push(
+    cubeFromBounds(
+      "cabinet_side_left",
+      [bodyFrom[0], 0, innerBackZ],
+      [innerLeft, height, carcassFrontZ],
+      bodySlot,
+      "Left side panel of the cabinet carcass.",
+    ),
+  );
+  cubes.push(
+    cubeFromBounds(
+      "cabinet_side_right",
+      [innerRight, 0, innerBackZ],
+      [bodyTo[0], height, carcassFrontZ],
+      bodySlot,
+      "Right side panel of the cabinet carcass.",
+    ),
+  );
+  cubes.push(
+    cubeFromBounds(
+      "cabinet_bottom",
+      [innerLeft, 0, innerBackZ],
+      [innerRight, innerBottom, carcassFrontZ],
+      bodySlot,
+      "Bottom shelf of the cabinet carcass.",
+    ),
+  );
+  cubes.push(
+    cubeFromBounds(
+      "cabinet_top",
+      [innerLeft, innerTop, innerBackZ],
+      [innerRight, height, carcassFrontZ],
+      bodySlot,
+      "Top shelf of the cabinet carcass.",
+    ),
+  );
 
   if (directives.drawerCount > 0) {
     const drawerCount = clamp(directives.drawerCount, 1, 4);
     const gap = 1;
-    const availableHeight = Math.max(6, height - 4 - gap * (drawerCount - 1));
+    const frontInsetX = 1;
+    const frontInsetY = 1;
+    const availableHeight = Math.max(
+      6,
+      innerTop - innerBottom - frontInsetY * 2 - gap * (drawerCount - 1),
+    );
     const drawerHeight = Math.max(3, roundCoordinate(availableHeight / drawerCount));
-    const left = bodyFrom[0] + 1;
-    const right = bodyTo[0] - 1;
+    const left = innerLeft + frontInsetX;
+    const right = innerRight - frontInsetX;
 
     for (let index = 0; index < drawerCount; index += 1) {
-      const fromY = 2 + index * (drawerHeight + gap);
-      const toY = Math.min(height - 2, fromY + drawerHeight);
+      const fromY = innerBottom + frontInsetY + index * (drawerHeight + gap);
+      const toY = Math.min(innerTop - frontInsetY, fromY + drawerHeight);
       const drawerName = `drawer_${index + 1}`;
       const centerY = roundCoordinate((fromY + toY) / 2);
 
       cubes.push(
         cubeFromBounds(
           drawerName,
-          [left, fromY, frontZ - frontThickness],
-          [right, toY, frontZ],
-          getMaterialSlotForPart(doors, spec),
+          [left, fromY, frontStartZ],
+          [right, toY, frontEndZ],
+          frontSlot,
+          "Drawer front panel with a slight proud offset from the cabinet carcass.",
         ),
       );
       cubes.push(
         cubeFromBounds(
           `${drawerName}_handle`,
-          [roundCoordinate(frame.centerX - 1), centerY - 1, frontZ],
-          [roundCoordinate(frame.centerX + 1), centerY + 1, frontZ + 1],
+          [roundCoordinate(frame.centerX - 1), centerY - 1, frontEndZ],
+          [roundCoordinate(frame.centerX + 1), centerY + 1, frontEndZ + handleDepth],
           handleSlot,
+          "Drawer pull protruding in front of the drawer face.",
         ),
       );
     }
   } else {
-    const halfDoorWidth = Math.max(3, roundCoordinate(width / 2) - 1);
+    const doorGap = 1;
+    const doorInset = 1;
+    const doorMidX = frame.centerX;
 
     cubes.push(
       cubeFromBounds(
         "door_left",
-        [bodyFrom[0] + 1, 2, frontZ - frontThickness],
-        [bodyFrom[0] + halfDoorWidth, height - 2, frontZ],
-        getMaterialSlotForPart(doors, spec),
+        [innerLeft + doorInset, innerBottom + doorInset, frontStartZ],
+        [doorMidX - doorGap, innerTop - doorInset, frontEndZ],
+        frontSlot,
+        "Left cabinet door front with proud offset from the carcass.",
       ),
     );
     cubes.push(
       cubeFromBounds(
         "door_right",
-        [bodyTo[0] - halfDoorWidth, 2, frontZ - frontThickness],
-        [bodyTo[0] - 1, height - 2, frontZ],
-        getMaterialSlotForPart(doors, spec),
+        [doorMidX + doorGap, innerBottom + doorInset, frontStartZ],
+        [innerRight - doorInset, innerTop - doorInset, frontEndZ],
+        frontSlot,
+        "Right cabinet door front with proud offset from the carcass.",
       ),
     );
 
     cubes.push(
       cubeFromBounds(
         "handle_left",
-        [roundCoordinate(frame.centerX - 1), roundCoordinate(height / 2) - 2, frontZ],
-        [roundCoordinate(frame.centerX), roundCoordinate(height / 2) + 2, frontZ + 1],
+        [doorMidX - 2, roundCoordinate(height / 2) - 2, frontEndZ],
+        [doorMidX - 1, roundCoordinate(height / 2) + 2, frontEndZ + handleDepth],
         handleSlot,
+        "Left door handle protruding beyond the door face.",
       ),
     );
     cubes.push(
       cubeFromBounds(
         "handle_right",
-        [roundCoordinate(frame.centerX), roundCoordinate(height / 2) - 2, frontZ],
-        [roundCoordinate(frame.centerX + 1), roundCoordinate(height / 2) + 2, frontZ + 1],
+        [doorMidX + 1, roundCoordinate(height / 2) - 2, frontEndZ],
+        [doorMidX + 2, roundCoordinate(height / 2) + 2, frontEndZ + handleDepth],
         handleSlot,
+        "Right door handle protruding beyond the door face.",
       ),
     );
   }
