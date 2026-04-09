@@ -3,10 +3,13 @@ import type {
   AssetSpec,
   DraftAssetSpecFromImageInput,
   ImageGuidance,
+  ImageMeasurementGuidance,
+  MeasurementObservationReport,
   MeasurementReport,
 } from "../contracts/schemas.js";
 import { draftAssetSpecFromPrompt } from "./promptDrafting.js";
 import { applyMeasurementGuidanceToSpec } from "./imageMeasurements.js";
+import { extractMeasurementGuidanceFromObservations } from "./imageObservationExtraction.js";
 
 function normalizeWord(value: string): string {
   return value.trim().toLowerCase();
@@ -156,6 +159,8 @@ export function draftAssetSpecFromImageGuidanceDetailed(
 ): {
   baseSpec: AssetSpec;
   spec: AssetSpec;
+  measurementGuidanceUsed: ImageMeasurementGuidance | null;
+  observationReport: MeasurementObservationReport | null;
   measurementReport: MeasurementReport | null;
 } {
   const inferredAssetType = inferAssetTypeHint(input.imageGuidance);
@@ -198,22 +203,44 @@ export function draftAssetSpecFromImageGuidanceDetailed(
     constraints,
   };
 
-  if (!input.measurementGuidance) {
+  let measurementGuidanceUsed = input.measurementGuidance ?? null;
+  let observationReport: MeasurementObservationReport | null = null;
+
+  if (!measurementGuidanceUsed && input.observationGuidance) {
+    const extracted = extractMeasurementGuidanceFromObservations({
+      observationGuidance: input.observationGuidance,
+    });
+    measurementGuidanceUsed = extracted.measurementGuidance;
+    observationReport = extracted.observationReport;
+  }
+
+  if (!measurementGuidanceUsed) {
     return {
       baseSpec: mergedSpec,
       spec: mergedSpec,
+      measurementGuidanceUsed: null,
+      observationReport,
       measurementReport: null,
     };
   }
 
   const measured = applyMeasurementGuidanceToSpec({
     spec: mergedSpec,
-    measurementGuidance: input.measurementGuidance,
+    measurementGuidance: measurementGuidanceUsed,
   });
+
+  const measurementWarnings = observationReport
+    ? [...measured.measurementReport.warnings, ...observationReport.warnings]
+    : measured.measurementReport.warnings;
 
   return {
     baseSpec: mergedSpec,
     spec: measured.spec,
-    measurementReport: measured.measurementReport,
+    measurementGuidanceUsed,
+    observationReport,
+    measurementReport: {
+      ...measured.measurementReport,
+      warnings: measurementWarnings,
+    },
   };
 }

@@ -4,6 +4,7 @@ import {
   BuildAssetFromSpecInputSchema,
   CubeCreateInputSchema,
   DraftAssetSpecFromImageInputSchema,
+  ExtractMeasurementGuidanceInputSchema,
   GenerateAssetFromImageInputSchema,
   GenerateAssetFromTextInputSchema,
   PreviewRenderInputSchema,
@@ -20,6 +21,7 @@ import {
   draftAssetSpecFromImageGuidanceDetailed,
 } from "../services/imageGuidancePlanning.js";
 import { draftAssetSpecFromPrompt } from "../services/promptDrafting.js";
+import { extractMeasurementGuidanceFromObservations } from "../services/imageObservationExtraction.js";
 import { buildBlockbenchAssetFromSpec } from "../services/specBuildOrchestrator.js";
 import { generateBlockbenchAssetFromImageGuidance } from "../services/imageBuildOrchestrator.js";
 import { generateBlockbenchAssetFromText } from "../services/textBuildOrchestrator.js";
@@ -334,13 +336,42 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
     async (input) => {
       try {
         const result = draftAssetSpecFromImageGuidanceDetailed(input);
+
+        if (!result.measurementGuidanceUsed || !result.measurementReport) {
+          return errorResult(
+            "Missing measurement input. Provide either measurementGuidance or observationGuidance.",
+          );
+        }
+
         return okResult({
           baseSpec: result.baseSpec,
           measuredSpec: result.spec,
+          measurementGuidanceUsed: result.measurementGuidanceUsed,
+          observationReport: result.observationReport,
           measurementReport: result.measurementReport,
         });
       } catch (error) {
         return errorResult("Failed to solve image-guided measurements.", error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "extract_measurement_guidance_from_observations",
+    {
+      title: "Extract Measurement Guidance From Observations",
+      description:
+        "Convert observed image rectangles plus one anchor dimension into measurementGuidance that can feed the image measurement solver.",
+      inputSchema: ExtractMeasurementGuidanceInputSchema.shape,
+    },
+    async (input) => {
+      try {
+        const result = extractMeasurementGuidanceFromObservations({
+          observationGuidance: input.observationGuidance,
+        });
+        return okResult(result);
+      } catch (error) {
+        return errorResult("Failed to extract measurement guidance from image observations.", error);
       }
     },
   );

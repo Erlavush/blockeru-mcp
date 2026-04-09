@@ -11,6 +11,7 @@ Current status:
 - High-level spec-to-model orchestration: implemented
 - High-level image-guided planning and generation: implemented
 - Image-guided measurement solving with block-to-unit anchors: implemented
+- Observation-to-measurement extraction for uploaded images: implemented
 - Post-build quality scoring and UV/texture diagnostics: implemented
 
 ## Repo Layout
@@ -40,6 +41,15 @@ Practical example:
 - if the object width measures `160 px` in the reference image
 - and that width is known to be `1 block`
 - then the solver uses `16 / 160 = 0.1` model units per pixel
+
+You can now also provide image observations instead of raw measurement JSON:
+
+- image view, such as `front` or `side`
+- one overall bounds rectangle
+- optional per-part rectangles
+- one known anchor dimension
+
+The server will derive `measurementGuidance` automatically before solving final Blockbench units.
 
 ## Install
 
@@ -102,6 +112,7 @@ The MCP server now exposes these high-level orchestration tools:
 - `generate_asset_from_text`
 - `generate_asset_from_image_guidance`
 - `solve_image_measurements`
+- `extract_measurement_guidance_from_observations`
 - `generate_blockbench_asset_from_text` as a backward-compatible alias
 
 These tools follow the same core flow:
@@ -118,9 +129,10 @@ These tools follow the same core flow:
 When using image-guided measurement:
 
 1. provide descriptive `imageGuidance`
-2. provide `measurementGuidance.anchor`
-3. provide `overallPixelSize` and optional per-part measurements
-4. let the solver convert image spans into snapped Blockbench units before the build starts
+2. either provide `measurementGuidance` directly, or provide `observationGuidance`
+3. include one anchor dimension, like `width = 1 block`
+4. include overall bounds and optional part bounds
+5. let the solver convert image spans into snapped Blockbench units before the build starts
 
 Important:
 

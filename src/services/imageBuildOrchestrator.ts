@@ -22,6 +22,7 @@ export async function generateBlockbenchAssetFromImageGuidance(options: {
     formatId: options.input.formatId,
     imageGuidance: options.input.imageGuidance,
     measurementGuidance: options.input.measurementGuidance,
+    observationGuidance: options.input.observationGuidance,
   });
   const built = await buildBlockbenchAssetFromSpec({
     bridge: options.bridge,
@@ -45,6 +46,8 @@ export async function generateBlockbenchAssetFromImageGuidance(options: {
     prompt: options.input.prompt,
     projectModeUsed: built.projectModeUsed,
     imageGuidance: options.input.imageGuidance,
+    measurementGuidanceUsed: drafted.measurementGuidanceUsed,
+    observationReport: drafted.observationReport,
     measurementReport: drafted.measurementReport,
     spec: built.spec,
     plan: built.plan,
