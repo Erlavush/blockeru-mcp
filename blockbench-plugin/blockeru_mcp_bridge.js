@@ -7,6 +7,7 @@
   const BASE_PATH = "/blockeru-bridge";
 
   let httpServer = null;
+  let startupError = null;
 
   function ensure(condition, message) {
     if (!condition) {
@@ -33,6 +34,19 @@
       ok: false,
       error: error instanceof Error ? error.message : String(error),
     });
+  }
+
+  function reportStatus(message, duration) {
+    console.log(`[${PLUGIN_TITLE}] ${message}`);
+    if (typeof Blockbench !== "undefined" && typeof Blockbench.showQuickMessage === "function") {
+      Blockbench.showQuickMessage(message, duration || 4000);
+    }
+  }
+
+  function reportError(error) {
+    startupError = error instanceof Error ? error.message : String(error);
+    console.error(`[${PLUGIN_TITLE}]`, error);
+    reportStatus(`${PLUGIN_TITLE} failed: ${startupError}`, 6000);
   }
 
   function readRequestBody(request) {
@@ -103,22 +117,48 @@
         "texture.create",
         "preview.render",
       ],
+      startupError: startupError,
       project: getProjectState(),
     };
   }
 
   function requireBridgeModule(moduleName) {
-    if (typeof requireNativeModule === "function") {
-      return requireNativeModule(moduleName, {
-        message: "Network access is required for the Blockeru MCP bridge.",
-        detail:
-          "The Blockbench plugin needs localhost network access so Codex can talk to Blockbench.",
-        optional: false,
-      });
+    try {
+      if (typeof requireNativeModule === "function") {
+        const nativeModule = requireNativeModule(moduleName, {
+          message: "Network access is required for the Blockeru MCP bridge.",
+          detail:
+            "The Blockbench plugin needs localhost network access so Codex can talk to Blockbench.",
+          optional: false,
+        });
+
+        if (nativeModule) {
+          return nativeModule;
+        }
+      }
+    } catch (_error) {
+      // Fall through to other resolution paths.
     }
 
-    if (typeof require === "function") {
-      return require(moduleName);
+    try {
+      if (typeof require === "function") {
+        return require(moduleName);
+      }
+    } catch (_error) {
+      // Fall through to null.
+    }
+
+    return null;
+  }
+
+  function resolveHttpModule() {
+    const candidates = ["node:http", "http"];
+
+    for (const candidate of candidates) {
+      const mod = requireBridgeModule(candidate);
+      if (mod && typeof mod.createServer === "function") {
+        return mod;
+      }
     }
 
     return null;
@@ -320,21 +360,30 @@
     variant: "desktop",
     version: VERSION,
     async onload() {
-      const http = requireBridgeModule("http");
-      ensure(http, "Failed to load Node HTTP module inside Blockbench.");
+      startupError = null;
 
-      httpServer = http.createServer((request, response) => {
-        Promise.resolve(handleRoute(request, response)).catch((error) => {
-          console.error(`[${PLUGIN_TITLE}]`, error);
-          sendError(response, 500, error);
+      try {
+        const http = resolveHttpModule();
+        ensure(http, "Failed to load the Node HTTP module inside Blockbench.");
+
+        httpServer = http.createServer((request, response) => {
+          Promise.resolve(handleRoute(request, response)).catch((error) => {
+            console.error(`[${PLUGIN_TITLE}]`, error);
+            sendError(response, 500, error);
+          });
         });
-      });
 
-      httpServer.listen(PORT, HOST, () => {
-        const message = `${PLUGIN_TITLE} listening on http://${HOST}:${PORT}${BASE_PATH}`;
-        console.log(message);
-        Blockbench.showQuickMessage(message, 4000);
-      });
+        httpServer.on("error", (error) => {
+          reportError(error);
+        });
+
+        httpServer.listen(PORT, HOST, () => {
+          startupError = null;
+          reportStatus(`${PLUGIN_TITLE} listening on http://${HOST}:${PORT}${BASE_PATH}`, 4000);
+        });
+      } catch (error) {
+        reportError(error);
+      }
     },
     onunload() {
       if (httpServer) {
