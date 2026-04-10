@@ -6,10 +6,12 @@ import type {
   ImageMeasurementGuidance,
   MeasurementObservationReport,
   MeasurementReport,
+  ReferenceImageAnalysis,
 } from "../contracts/schemas.js";
 import { draftAssetSpecFromPrompt } from "./promptDrafting.js";
 import { applyMeasurementGuidanceToSpec } from "./imageMeasurements.js";
 import { extractMeasurementGuidanceFromObservations } from "./imageObservationExtraction.js";
+import { analyzeReferenceImage } from "./referenceImageAnalysis.js";
 
 function normalizeWord(value: string): string {
   return value.trim().toLowerCase();
@@ -50,6 +52,28 @@ function normalizeProportions(
     Math.max(1, Math.round(hint[1] * ratio)),
     Math.max(1, Math.round(hint[2] * ratio)),
   ];
+}
+
+function inferReferenceMaterials(analysis: ReferenceImageAnalysis | null): string[] {
+  if (!analysis) {
+    return [];
+  }
+
+  return Object.keys(analysis.materialColorHints);
+}
+
+function chooseReferencePalette(
+  guidance: ImageGuidance,
+  analysis: ReferenceImageAnalysis | null,
+  fallback: readonly string[],
+): string[] {
+  const values = uniqueWords([
+    ...(analysis?.dominantColors ?? []),
+    ...guidance.dominantColors,
+    ...fallback,
+  ]);
+
+  return values.length > 0 ? values : ["natural"];
 }
 
 export function buildImageGuidancePlanningPrompt(
@@ -162,7 +186,14 @@ export function draftAssetSpecFromImageGuidanceDetailed(
   measurementGuidanceUsed: ImageMeasurementGuidance | null;
   observationReport: MeasurementObservationReport | null;
   measurementReport: MeasurementReport | null;
+  referenceImageAnalysis: ReferenceImageAnalysis | null;
 } {
+  const referenceImageAnalysis = input.referenceImage
+    ? analyzeReferenceImage({
+        referenceImage: input.referenceImage,
+        observationGuidance: input.observationGuidance,
+      })
+    : null;
   const inferredAssetType = inferAssetTypeHint(input.imageGuidance);
   const planningPrompt = buildImageGuidancePlanningPrompt(input.prompt, {
     ...input.imageGuidance,
@@ -171,12 +202,14 @@ export function draftAssetSpecFromImageGuidanceDetailed(
   const baseSpec = draftAssetSpecFromPrompt(planningPrompt, input.formatId);
   const materials = uniqueWords([
     ...baseSpec.materials,
+    ...inferReferenceMaterials(referenceImageAnalysis),
     ...input.imageGuidance.materials,
   ]);
-  const palette = uniqueWords([
-    ...input.imageGuidance.dominantColors,
-    ...baseSpec.palette,
-  ]);
+  const palette = chooseReferencePalette(
+    input.imageGuidance,
+    referenceImageAnalysis,
+    baseSpec.palette,
+  );
   const constraints = [...baseSpec.constraints];
 
   if (input.imageGuidance.notes) {
@@ -199,6 +232,10 @@ export function draftAssetSpecFromImageGuidanceDetailed(
     symmetry: input.imageGuidance.symmetry ?? baseSpec.symmetry,
     materials: materials.length > 0 ? materials : baseSpec.materials,
     palette: palette.length > 0 ? palette : baseSpec.palette,
+    materialColorHints: {
+      ...baseSpec.materialColorHints,
+      ...(referenceImageAnalysis?.materialColorHints ?? {}),
+    },
     parts: mergePartMetadata(baseSpec.parts, input.imageGuidance),
     constraints,
   };
@@ -209,6 +246,7 @@ export function draftAssetSpecFromImageGuidanceDetailed(
   if (!measurementGuidanceUsed && input.observationGuidance) {
     const extracted = extractMeasurementGuidanceFromObservations({
       observationGuidance: input.observationGuidance,
+      referenceImageAnalysis,
     });
     measurementGuidanceUsed = extracted.measurementGuidance;
     observationReport = extracted.observationReport;
@@ -221,6 +259,7 @@ export function draftAssetSpecFromImageGuidanceDetailed(
       measurementGuidanceUsed: null,
       observationReport,
       measurementReport: null,
+      referenceImageAnalysis,
     };
   }
 
@@ -242,5 +281,6 @@ export function draftAssetSpecFromImageGuidanceDetailed(
       ...measured.measurementReport,
       warnings: measurementWarnings,
     },
+    referenceImageAnalysis,
   };
 }

@@ -213,6 +213,7 @@ export function draftAssetSpecFromPrompt(prompt: string, formatId: string): Asse
     symmetry: lower.includes("symmetrical") || lower.includes("symmetric") ? "mirror_x" : "none",
     materials,
     palette: palette.length > 0 ? palette : ["natural"],
+    materialColorHints: {},
     parts,
     textureStrategy:
       lower.includes("clean") || lower.includes("minimal")

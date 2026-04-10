@@ -1,6 +1,7 @@
 import type {
   BuildPlan,
   CubeResult,
+  CubeSummary,
   PlannedCube,
   ProjectState,
   QualityFinding,
@@ -144,13 +145,18 @@ export function analyzeBuildQuality(options: {
   project: ProjectState;
   texture: TextureResult | null;
   createdCubes: CubeResult[];
+  resolvedCubes?: CubeSummary[];
   previewRendered: boolean;
 }): QualityReport {
   const findings: QualityFinding[] = [];
   const score = { value: 100 };
   const targetCenter = getTargetSceneCenter(options.plan.formatId);
   const builtBounds = toBounds(
-    options.createdCubes.length > 0 ? options.createdCubes : options.plan.cubes,
+    options.resolvedCubes && options.resolvedCubes.length > 0
+      ? options.resolvedCubes
+      : options.createdCubes.length > 0
+        ? options.createdCubes
+        : options.plan.cubes,
   );
   const centerOffsetX = Math.abs(builtBounds.center[0] - targetCenter[0]);
   const centerOffsetZ = Math.abs(builtBounds.center[2] - targetCenter[2]);
@@ -236,6 +242,19 @@ export function analyzeBuildQuality(options: {
         severity: "warning",
         message: "No texture was created for this asset build.",
         suggestedFix: "Enable texture creation or add a texture assignment pass before export.",
+      },
+      score,
+    );
+  }
+
+  if (options.project.textureCount > 1) {
+    pushFinding(
+      findings,
+      {
+        code: "multiple_project_textures",
+        severity: "warning",
+        message: `Project currently contains ${options.project.textureCount} textures instead of a single managed atlas.`,
+        suggestedFix: "Delete stale generated textures or update the existing managed atlas in place during repair passes.",
       },
       score,
     );

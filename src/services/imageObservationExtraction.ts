@@ -5,6 +5,7 @@ import type {
   MeasurementObservationReport,
   ObservationPlane,
   ObservedMeasurementInput,
+  ReferenceImageAnalysis,
 } from "../contracts/schemas.js";
 
 function defaultPlaneForView(view: ImageObservationGuidance["imageView"]): ObservationPlane | null {
@@ -54,13 +55,16 @@ function axisPixelSizeFromObservation(options: {
 function toMeasuredPart(
   observation: ObservedMeasurementInput,
   plane: ObservationPlane | null,
+  fittedRect?: ObservedMeasurementInput["rect"] | null,
 ) {
+  const rect = fittedRect ?? observation.rect;
+
   return {
     partName: observation.partName,
     pixelSize: axisPixelSizeFromObservation({
       plane,
-      width: observation.rect.width,
-      height: observation.rect.height,
+      width: rect.width,
+      height: rect.height,
       depthPixels: observation.depthPixels,
     }),
     notes: observation.notes,
@@ -69,12 +73,15 @@ function toMeasuredPart(
 
 export function extractMeasurementGuidanceFromObservations(options: {
   observationGuidance: ImageObservationGuidance;
+  referenceImageAnalysis?: ReferenceImageAnalysis | null;
 }): {
   measurementGuidance: ImageMeasurementGuidance;
   observationReport: MeasurementObservationReport;
 } {
   const defaultPlane = defaultPlaneForView(options.observationGuidance.imageView);
   const warnings: string[] = [];
+  let autoFittedPartCount = 0;
+  let usedForegroundBounds = false;
 
   if (options.observationGuidance.imageView === "three_quarter") {
     warnings.push(
@@ -89,16 +96,25 @@ export function extractMeasurementGuidanceFromObservations(options: {
   }
 
   const overallPlane = options.observationGuidance.overallPlane ?? defaultPlane;
-  const overallPixelSize = options.observationGuidance.overallBounds
+  const overallBounds =
+    options.observationGuidance.overallBounds ??
+    options.referenceImageAnalysis?.foregroundBounds ??
+    undefined;
+  const overallPixelSize = overallBounds
     ? axisPixelSizeFromObservation({
         plane: overallPlane,
-        width: options.observationGuidance.overallBounds.width,
-        height: options.observationGuidance.overallBounds.height,
+        width: overallBounds.width,
+        height: overallBounds.height,
         depthPixels: options.observationGuidance.overallDepthPixels,
       })
     : null;
 
-  if (!options.observationGuidance.overallBounds) {
+  if (!options.observationGuidance.overallBounds && options.referenceImageAnalysis?.foregroundBounds) {
+    usedForegroundBounds = true;
+    warnings.push(
+      "overallBounds were inferred from the detected foreground silhouette in the reference image.",
+    );
+  } else if (!options.observationGuidance.overallBounds) {
     warnings.push(
       "No overallBounds were provided, so overall size falls back to prompt/image-guidance defaults.",
     );
@@ -106,6 +122,9 @@ export function extractMeasurementGuidanceFromObservations(options: {
 
   const partMeasurements = options.observationGuidance.partObservations.map((observation) => {
     const plane = observation.plane ?? defaultPlane;
+    const fittedPart = options.referenceImageAnalysis?.partAnalyses.find(
+      (part) => part.partName.trim().toLowerCase() === observation.partName.trim().toLowerCase(),
+    );
 
     if (!plane) {
       warnings.push(
@@ -120,7 +139,18 @@ export function extractMeasurementGuidanceFromObservations(options: {
       );
     }
 
-    return toMeasuredPart(observation, plane);
+    if (fittedPart?.fittedRect) {
+      autoFittedPartCount += 1;
+      if (fittedPart.occupancyRatio < 0.2) {
+        warnings.push(
+          `Part "${observation.partName}" only weakly overlaps the detected foreground (${Math.round(
+            fittedPart.occupancyRatio * 100,
+          )}% occupancy).`,
+        );
+      }
+    }
+
+    return toMeasuredPart(observation, plane, fittedPart?.fittedRect);
   });
 
   const notes = [options.observationGuidance.notes].filter(
@@ -141,6 +171,8 @@ export function extractMeasurementGuidanceFromObservations(options: {
       defaultPlane,
       overallPixelSize,
       partMeasurementCount: partMeasurements.length,
+      autoFittedPartCount,
+      usedForegroundBounds,
       warnings,
     },
   };

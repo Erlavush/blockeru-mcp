@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { PNG } from "pngjs";
-import type { AssetSpec, BuildPlan, GeneratedTextureAtlas } from "../contracts/schemas.js";
+import type { TexturePaintRegionInput, TextureRegion } from "../contracts/schemas.js";
 
 type Rgb = { r: number; g: number; b: number };
 
@@ -36,21 +36,6 @@ function mix(a: Rgb, b: Rgb, t: number): Rgb {
   };
 }
 
-function parseHexColor(value: string): Rgb | null {
-  const normalized = value.trim().toLowerCase();
-  const raw = normalized.startsWith("#") ? normalized.slice(1) : normalized;
-
-  if (!/^[0-9a-f]{6}$/.test(raw)) {
-    return null;
-  }
-
-  return {
-    r: Number.parseInt(raw.slice(0, 2), 16),
-    g: Number.parseInt(raw.slice(2, 4), 16),
-    b: Number.parseInt(raw.slice(4, 6), 16),
-  };
-}
-
 function darken(color: Rgb, amount: number): Rgb {
   return mix(color, { r: 0, g: 0, b: 0 }, amount);
 }
@@ -74,29 +59,28 @@ function hash(seed: string, x: number, y: number): number {
 function resolveBaseColor(material: string, colorHint: string): Rgb {
   const lowerMaterial = material.toLowerCase();
   const lowerHint = colorHint.toLowerCase();
-  const hintedColor = parseHexColor(lowerHint);
 
   if (lowerMaterial === "wood") {
-    return hintedColor ? mix(NAMED_COLORS.brown, hintedColor, 0.7) : NAMED_COLORS.brown;
+    return NAMED_COLORS.brown;
   }
 
   if (lowerMaterial === "metal") {
-    return hintedColor ? mix(NAMED_COLORS.silver, hintedColor, 0.5) : NAMED_COLORS.silver;
+    return NAMED_COLORS.silver;
   }
 
   if (lowerMaterial === "stone") {
-    return hintedColor ? mix(NAMED_COLORS.gray, hintedColor, 0.6) : NAMED_COLORS.gray;
+    return NAMED_COLORS.gray;
   }
 
   if (lowerMaterial === "fabric") {
-    return hintedColor ?? NAMED_COLORS[lowerHint] ?? NAMED_COLORS.blue;
+    return NAMED_COLORS[lowerHint] ?? NAMED_COLORS.blue;
   }
 
   if (lowerMaterial === "glass") {
-    return hintedColor ? lighten(hintedColor, 0.1) : lighten(NAMED_COLORS.cyan, 0.15);
+    return lighten(NAMED_COLORS.cyan, 0.15);
   }
 
-  return hintedColor ?? NAMED_COLORS[lowerHint] ?? NAMED_COLORS.beige;
+  return NAMED_COLORS[lowerHint] ?? NAMED_COLORS.beige;
 }
 
 function paintPixel(png: PNG, x: number, y: number, color: Rgb): void {
@@ -107,33 +91,51 @@ function paintPixel(png: PNG, x: number, y: number, color: Rgb): void {
   png.data[index + 3] = 255;
 }
 
-function paintTile(
-  png: PNG,
-  xOffset: number,
-  yOffset: number,
-  tileWidth: number,
-  tileHeight: number,
-  material: string,
-  colorHint: string,
-  seed: string,
-): void {
-  const base = resolveBaseColor(material, colorHint);
+function decodeTextureDataUrl(dataUrl: string): PNG {
+  if (!dataUrl.startsWith("data:image/png;base64,")) {
+    throw new Error("Texture editing currently supports PNG data URLs only.");
+  }
+
+  const buffer = Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64");
+  return PNG.sync.read(buffer);
+}
+
+function encodeTextureDataUrl(png: PNG): string {
+  return `data:image/png;base64,${Buffer.from(PNG.sync.write(png)).toString("base64")}`;
+}
+
+function validateRegion(region: TextureRegion, png: PNG): void {
+  if (region.x + region.width > png.width || region.y + region.height > png.height) {
+    throw new Error(
+      `Texture region ${region.x},${region.y},${region.width},${region.height} exceeds texture bounds ${png.width}x${png.height}.`,
+    );
+  }
+}
+
+function paintMaterialRegion(options: {
+  png: PNG;
+  region: TextureRegion;
+  material: string;
+  colorHint: string;
+  seed: string;
+}): void {
+  const base = resolveBaseColor(options.material, options.colorHint);
   const edge = darken(base, 0.2);
   const highlight = lighten(base, 0.08);
 
-  for (let y = 0; y < tileHeight; y += 1) {
-    for (let x = 0; x < tileWidth; x += 1) {
+  for (let localY = 0; localY < options.region.height; localY += 1) {
+    for (let localX = 0; localX < options.region.width; localX += 1) {
       let color = base;
-      const noise = hash(seed, x, y);
+      const noise = hash(options.seed, localX, localY);
 
-      switch (material) {
+      switch (options.material) {
         case "wood": {
-          const grainBand = Math.sin((y + noise * 4) / 6) * 0.08;
+          const grainBand = Math.sin((localY + noise * 4) / 6) * 0.08;
           color = mix(base, darken(base, 0.18), 0.22 + grainBand);
           break;
         }
         case "metal": {
-          const brushed = ((x + y) % 6) / 12;
+          const brushed = ((localX + localY) % 6) / 12;
           color = mix(base, highlight, brushed);
           if (noise > 0.96) {
             color = darken(base, 0.22);
@@ -145,14 +147,14 @@ function paintTile(
           break;
         }
         case "fabric": {
-          const weave = (x % 4 === 0 || y % 4 === 0) ? 0.14 : 0;
+          const weave = localX % 4 === 0 || localY % 4 === 0 ? 0.14 : 0;
           color = mix(base, darken(base, 0.2), weave + noise * 0.08);
           break;
         }
         case "glass": {
-          const gradient = y / tileHeight;
+          const gradient = localY / options.region.height;
           color = mix(lighten(base, 0.15), darken(base, 0.12), gradient * 0.7);
-          if ((x + y) % 19 === 0) {
+          if ((localX + localY) % 19 === 0) {
             color = lighten(color, 0.2);
           }
           break;
@@ -163,43 +165,36 @@ function paintTile(
         }
       }
 
-      if (x === 0 || y === 0 || x === tileWidth - 1 || y === tileHeight - 1) {
+      if (
+        localX === 0 ||
+        localY === 0 ||
+        localX === options.region.width - 1 ||
+        localY === options.region.height - 1
+      ) {
         color = edge;
-      } else if (x === 1 || y === 1) {
+      } else if (localX === 1 || localY === 1) {
         color = highlight;
       }
 
-      paintPixel(png, xOffset + x, yOffset + y, color);
+      paintPixel(options.png, options.region.x + localX, options.region.y + localY, color);
     }
   }
 }
 
-export function generateMaterialAtlas(spec: AssetSpec, plan: BuildPlan): GeneratedTextureAtlas {
-  const png = new PNG({
-    width: plan.textureWidth,
-    height: plan.textureHeight,
+export function paintTextureRegionDataUrl(options: {
+  dataUrl: string;
+  input: Pick<TexturePaintRegionInput, "region" | "material" | "colorHint" | "seed">;
+}): string {
+  const png = decodeTextureDataUrl(options.dataUrl);
+  validateRegion(options.input.region, png);
+  paintMaterialRegion({
+    png,
+    region: options.input.region,
+    material: options.input.material,
+    colorHint: options.input.colorHint,
+    seed:
+      options.input.seed ??
+      `${options.input.material}:${options.input.colorHint}:${options.input.region.x}:${options.input.region.y}`,
   });
-
-  for (const slot of plan.materialSlots) {
-    paintTile(
-      png,
-      slot.uvOffset[0],
-      slot.uvOffset[1],
-      slot.uvSize[0],
-      slot.uvSize[1],
-      slot.material,
-      slot.colorHint,
-      `${spec.assetType}:${slot.slotId}:${slot.colorHint}`,
-    );
-  }
-
-  const dataUrl = `data:image/png;base64,${Buffer.from(PNG.sync.write(png)).toString("base64")}`;
-
-  return {
-    name: plan.managedTextureName,
-    width: plan.textureWidth,
-    height: plan.textureHeight,
-    dataUrl,
-    materialSlots: plan.materialSlots,
-  };
+  return encodeTextureDataUrl(png);
 }
